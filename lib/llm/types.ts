@@ -1,5 +1,6 @@
 export interface LLMProvider {
   name: string;
+  model: string;
   generateJSON<T>(prompt: string, systemPrompt: string): Promise<T>;
 }
 

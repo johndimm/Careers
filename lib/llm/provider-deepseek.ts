@@ -8,6 +8,7 @@ const client = new OpenAI({
 
 export const deepseekProvider: LLMProvider = {
   name: 'deepseek',
+  model: 'deepseek-chat',
 
   async generateJSON<T>(prompt: string, systemPrompt: string): Promise<T> {
     const response = await client.chat.completions.create({

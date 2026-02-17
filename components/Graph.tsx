@@ -143,6 +143,8 @@ export default function Graph({ nodes, links, selectedNodeId, onNodeClick, onLin
       .force('link', d3.forceLink<GraphNode, GraphLink>(mergedLinks).id(d => d.id).distance(80))
       .force('charge', d3.forceManyBody().strength(-150))
       .force('center', d3.forceCenter(width / 2, height / 2))
+      .force('x', d3.forceX(width / 2).strength(0.03))
+      .force('y', d3.forceY(height / 2).strength(0.03))
       .force('collide', d3.forceCollide().radius(50))
       .alpha(hasExisting ? 0.3 : 0.5)
       .alphaDecay(0.05)

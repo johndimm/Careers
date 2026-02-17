@@ -1,6 +1,7 @@
 'use client';
 
-import { X, User, Building2, Briefcase, Calendar } from 'lucide-react';
+import { useState } from 'react';
+import { X, User, Building2, Briefcase, Calendar, Link2, Check } from 'lucide-react';
 
 interface EdgeInfo {
   position?: string;
@@ -30,9 +31,20 @@ interface NodeDetailProps {
 }
 
 export default function NodeDetail({ node, edges, onClose, onNodeClick }: NodeDetailProps) {
+  const [copied, setCopied] = useState(false);
+
   if (!node) return null;
 
   const isPerson = node.type === 'person';
+
+  const handleCopyLink = () => {
+    const url = new URL(window.location.href.split('?')[0]);
+    url.searchParams.set(isPerson ? 'person' : 'company', node.name);
+    navigator.clipboard.writeText(url.toString()).then(() => {
+      setCopied(true);
+      setTimeout(() => setCopied(false), 2000);
+    });
+  };
 
   return (
     <div className="fixed right-0 top-0 h-full w-96 z-40 overflow-y-auto border-l border-slate-700/50 bg-slate-900/95 backdrop-blur-xl">
@@ -53,12 +65,21 @@ export default function NodeDetail({ node, edges, onClose, onNodeClick }: NodeDe
             )}
             <h2 className="text-lg font-semibold text-slate-100">{node.name}</h2>
           </div>
-          <button
-            onClick={onClose}
-            className="rounded-md p-1 text-slate-500 hover:text-slate-300 transition-colors"
-          >
-            <X className="h-4 w-4" />
-          </button>
+          <div className="flex items-center gap-1">
+            <button
+              onClick={handleCopyLink}
+              className="rounded-md p-1 text-slate-500 hover:text-slate-300 transition-colors"
+              title="Copy shareable link"
+            >
+              {copied ? <Check className="h-4 w-4 text-green-400" /> : <Link2 className="h-4 w-4" />}
+            </button>
+            <button
+              onClick={onClose}
+              className="rounded-md p-1 text-slate-500 hover:text-slate-300 transition-colors"
+            >
+              <X className="h-4 w-4" />
+            </button>
+          </div>
         </div>
 
         {isPerson && node.summary && (

@@ -5,6 +5,7 @@ const client = new Anthropic();
 
 export const anthropicProvider: LLMProvider = {
   name: 'anthropic',
+  model: 'claude-sonnet-4-20250514',
 
   async generateJSON<T>(prompt: string, systemPrompt: string): Promise<T> {
     const response = await client.messages.create({

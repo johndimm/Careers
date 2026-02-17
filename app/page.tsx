@@ -1,6 +1,9 @@
 'use client';
 
-import { useState, useCallback, useEffect, useRef } from 'react';
+import { useState, useCallback, useEffect, useRef, Suspense } from 'react';
+import { useSearchParams } from 'next/navigation';
+import { Share2, Check, BookOpen, Loader2, Search, Brain, ImageIcon } from 'lucide-react';
+import Link from 'next/link';
 import Graph, { GraphNode, GraphLink } from '@/components/Graph';
 import SearchBar from '@/components/SearchBar';
 import SettingsPanel from '@/components/SettingsPanel';
@@ -14,29 +17,80 @@ interface GraphData {
   links: GraphLink[];
 }
 
-async function fetchJSON(endpoint: string, body: Record<string, unknown>): Promise<Record<string, unknown> | null> {
+export interface ProgressStep {
+  step: string;
+  phase: string;
+  done?: boolean;
+}
+
+async function fetchSSE(
+  endpoint: string,
+  body: Record<string, unknown>,
+  onProgress: (step: ProgressStep) => void,
+): Promise<Record<string, unknown> | null> {
   const res = await fetch(endpoint, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify(body),
     signal: AbortSignal.timeout(120000),
   });
-  const text = await res.text();
-  if (!res.ok) return null;
-  try {
-    return JSON.parse(text);
-  } catch {
-    return null;
+
+  if (!res.ok || !res.body) return null;
+
+  const reader = res.body.getReader();
+  const decoder = new TextDecoder();
+  let buffer = '';
+  let result: Record<string, unknown> | null = null;
+
+  while (true) {
+    const { done, value } = await reader.read();
+    if (done) break;
+    buffer += decoder.decode(value, { stream: true });
+
+    // Parse SSE events from buffer
+    const lines = buffer.split('\n');
+    buffer = lines.pop() || ''; // keep incomplete last line
+
+    let eventType = '';
+    for (const line of lines) {
+      if (line.startsWith('event: ')) {
+        eventType = line.slice(7);
+      } else if (line.startsWith('data: ')) {
+        const data = JSON.parse(line.slice(6));
+        if (eventType === 'progress') {
+          onProgress(data as ProgressStep);
+        } else if (eventType === 'result') {
+          result = data;
+        } else if (eventType === 'error') {
+          console.error('SSE error:', data);
+        }
+        eventType = '';
+      }
+    }
   }
+
+  return result;
 }
 
 export default function Home() {
+  return (
+    <Suspense>
+      <HomeContent />
+    </Suspense>
+  );
+}
+
+function HomeContent() {
   const [graphData, setGraphData] = useState<GraphData>({ nodes: [], links: [] });
   const [selectedNode, setSelectedNode] = useState<GraphNode | null>(null);
   const [selectedLink, setSelectedLink] = useState<GraphLink | null>(null);
   const [loading, setLoading] = useState(false);
-  const [loadingMessage, setLoadingMessage] = useState('Researching...');
+  const [loadingTitle, setLoadingTitle] = useState('');
+  const [progressSteps, setProgressSteps] = useState<ProgressStep[]>([]);
+  const [shareCopied, setShareCopied] = useState(false);
+  const [nodeProgress, setNodeProgress] = useState<Record<string, { name: string; steps: ProgressStep[] }>>({});
   const loadingNodesRef = useRef<Set<string>>(new Set());
+  const lastSearchRef = useRef<{ query: string; type: 'person' | 'company' } | null>(null);
 
   const rebuildGraph = useCallback(() => {
     const data = store.buildGraph();
@@ -55,11 +109,17 @@ export default function Home() {
 
   const handleSearch = useCallback(async (query: string, type: 'person' | 'company') => {
     setLoading(true);
-    setLoadingMessage(type === 'person' ? `Researching ${query}...` : `Looking up ${query}...`);
+    setLoadingTitle(type === 'person' ? `Researching ${query}` : `Looking up ${query}`);
+    setProgressSteps([]);
+    lastSearchRef.current = { query, type };
 
     try {
       const endpoint = type === 'person' ? '/api/person' : '/api/company';
-      const data = await fetchJSON(endpoint, { name: query, provider: store.getActiveProvider() });
+      const data = await fetchSSE(
+        endpoint,
+        { name: query, provider: store.getActiveProvider() },
+        (step) => setProgressSteps(prev => [...prev, step]),
+      );
 
       if (data && type === 'person' && data.person) {
         store.mergePersonData(data.person as Parameters<typeof store.mergePersonData>[0]);
@@ -75,6 +135,27 @@ export default function Home() {
     }
   }, [rebuildGraph]);
 
+  // Handle URL query parameters (?person=Name or ?company=Name)
+  // Clears existing graph so the recipient starts fresh from the shared entity
+  const searchParams = useSearchParams();
+  const urlSearchDone = useRef(false);
+  useEffect(() => {
+    if (urlSearchDone.current) return;
+    const person = searchParams.get('person');
+    const company = searchParams.get('company');
+    if (person) {
+      urlSearchDone.current = true;
+      store.clearGraph();
+      setGraphData({ nodes: [], links: [] });
+      handleSearch(person, 'person');
+    } else if (company) {
+      urlSearchDone.current = true;
+      store.clearGraph();
+      setGraphData({ nodes: [], links: [] });
+      handleSearch(company, 'company');
+    }
+  }, [searchParams, handleSearch]);
+
   const handleNodeClick = useCallback(async (node: GraphNode) => {
     // Clear link selection when clicking a node
     setSelectedLink(null);
@@ -87,32 +168,52 @@ export default function Home() {
 
     const norm = store.normFromNodeId(node.id);
 
+    const nodeId = node.id;
+    const nodeName = node.name;
+
+    const onNodeProgress = (step: ProgressStep) => {
+      setNodeProgress(prev => {
+        const entry = prev[nodeId] || { name: nodeName, steps: [] };
+        return { ...prev, [nodeId]: { name: nodeName, steps: [...entry.steps, step] } };
+      });
+    };
+
+    const clearNodeProgress = () => {
+      setNodeProgress(prev => {
+        const next = { ...prev };
+        delete next[nodeId];
+        return next;
+      });
+    };
+
     if (node.type === 'company') {
-      // Fetch people for this company — each click may bring new people
       const excludeNames = store.getCompanyPeopleNames(norm);
-      loadingNodesRef.current.add(node.id);
+      loadingNodesRef.current.add(nodeId);
+      setNodeProgress(prev => ({ ...prev, [nodeId]: { name: nodeName, steps: [] } }));
       rebuildGraph();
-      fetchJSON('/api/company', { name: node.name, provider: store.getActiveProvider(), excludeNames })
+      fetchSSE('/api/company', { name: nodeName, provider: store.getActiveProvider(), excludeNames }, onNodeProgress)
         .then(data => {
           if (data?.company) store.mergeCompanyData(data.company as Parameters<typeof store.mergeCompanyData>[0]);
         })
         .catch(e => console.error('Company expand error:', e))
         .finally(() => {
-          loadingNodesRef.current.delete(node.id);
+          loadingNodesRef.current.delete(nodeId);
+          clearNodeProgress();
           rebuildGraph();
         });
     } else if (node.type === 'person') {
-      // Fetch companies for this person — each click may find more
       const excludeCompanies = store.getPersonCompanyNames(norm);
-      loadingNodesRef.current.add(node.id);
+      loadingNodesRef.current.add(nodeId);
+      setNodeProgress(prev => ({ ...prev, [nodeId]: { name: nodeName, steps: [] } }));
       rebuildGraph();
-      fetchJSON('/api/person', { name: node.name, provider: store.getActiveProvider(), excludeCompanies })
+      fetchSSE('/api/person', { name: nodeName, provider: store.getActiveProvider(), excludeCompanies }, onNodeProgress)
         .then(data => {
           if (data?.person) store.mergePersonData(data.person as Parameters<typeof store.mergePersonData>[0]);
         })
         .catch(e => console.error('Person expand error:', e))
         .finally(() => {
-          loadingNodesRef.current.delete(node.id);
+          loadingNodesRef.current.delete(nodeId);
+          clearNodeProgress();
           rebuildGraph();
         });
     }
@@ -143,6 +244,30 @@ export default function Home() {
       handleNodeClick(node);
     }
   }, [graphData.nodes, handleNodeClick]);
+
+  const handleShare = useCallback(() => {
+    // Find the first person node that was explicitly searched
+    const personNodes = graphData.nodes.filter(n => n.type === 'person');
+    const last = lastSearchRef.current;
+    let name = '';
+    let type: 'person' | 'company' = 'person';
+
+    if (last) {
+      name = last.query;
+      type = last.type;
+    } else if (personNodes.length > 0) {
+      name = personNodes[0].name;
+    }
+
+    if (!name) return;
+
+    const url = new URL(window.location.href.split('?')[0]);
+    url.searchParams.set(type, name);
+    navigator.clipboard.writeText(url.toString()).then(() => {
+      setShareCopied(true);
+      setTimeout(() => setShareCopied(false), 2000);
+    });
+  }, [graphData.nodes]);
 
   const handleClear = useCallback(() => {
     store.clearGraph();
@@ -195,13 +320,31 @@ export default function Home() {
         <div className="flex items-center gap-3">
           <SearchBar onSearch={handleSearch} disabled={loading} />
           {graphData.nodes.length > 0 && (
-            <button
-              onClick={handleClear}
-              className="rounded-lg border border-slate-700/50 bg-slate-800/50 px-3 py-2 text-xs text-slate-400 transition-colors hover:text-red-400 hover:border-red-700/50"
-            >
-              Clear
-            </button>
+            <>
+              <button
+                onClick={handleShare}
+                className="flex items-center gap-1.5 rounded-lg border border-slate-700/50 bg-slate-800/50 px-3 py-2 text-xs text-slate-400 transition-colors hover:text-blue-400 hover:border-blue-700/50"
+                title="Copy shareable link"
+              >
+                {shareCopied ? <Check className="h-3.5 w-3.5 text-green-400" /> : <Share2 className="h-3.5 w-3.5" />}
+                {shareCopied ? 'Copied!' : 'Share'}
+              </button>
+              <button
+                onClick={handleClear}
+                className="rounded-lg border border-slate-700/50 bg-slate-800/50 px-3 py-2 text-xs text-slate-400 transition-colors hover:text-red-400 hover:border-red-700/50"
+              >
+                Clear
+              </button>
+            </>
           )}
+          <Link
+            href="/services"
+            className="flex items-center gap-1.5 rounded-lg border border-slate-700/50 bg-slate-800/50 px-3 py-2 text-xs text-slate-400 transition-colors hover:text-slate-200 hover:border-slate-600"
+            title="Services documentation"
+          >
+            <BookOpen className="h-3.5 w-3.5" />
+            Services
+          </Link>
           <SettingsPanel />
         </div>
       </header>
@@ -247,8 +390,38 @@ export default function Home() {
         />
       )}
 
-      {/* Loading overlay */}
-      {loading && <LoadingSpinner message={loadingMessage} />}
+      {/* Loading overlay for search bar searches */}
+      {loading && <LoadingSpinner title={loadingTitle} steps={progressSteps} />}
+
+      {/* Node expansion progress — bottom-left, non-modal */}
+      {Object.keys(nodeProgress).length > 0 && (
+        <div className="fixed bottom-4 left-4 z-40 space-y-2 w-[420px]">
+          {Object.entries(nodeProgress).map(([id, { name, steps }]) => (
+            <div key={id} className="rounded-xl bg-slate-900/95 border border-slate-700/50 backdrop-blur-xl px-4 py-3 shadow-lg">
+              <div className="flex items-center gap-2 mb-2">
+                <Loader2 className="h-3.5 w-3.5 animate-spin text-amber-500 shrink-0" />
+                <span className="text-xs font-medium text-slate-200">{name}</span>
+              </div>
+              <div className="space-y-1 max-h-48 overflow-y-auto">
+                {steps.map((step, i) => (
+                  <div key={i} className="flex items-start gap-2 ml-1">
+                    {step.done
+                      ? <Check className="h-3 w-3 text-green-400 shrink-0 mt-0.5" />
+                      : <Loader2 className="h-3 w-3 animate-spin text-amber-500/70 shrink-0 mt-0.5" />
+                    }
+                    <span className={`text-[11px] leading-relaxed ${step.done ? 'text-slate-500' : 'text-slate-400'}`}>
+                      {step.phase === 'search' && <Search className="h-2.5 w-2.5 inline mr-1" />}
+                      {step.phase === 'llm' && <Brain className="h-2.5 w-2.5 inline mr-1" />}
+                      {step.phase === 'images' && <ImageIcon className="h-2.5 w-2.5 inline mr-1" />}
+                      {step.step}
+                    </span>
+                  </div>
+                ))}
+              </div>
+            </div>
+          ))}
+        </div>
+      )}
     </div>
   );
 }

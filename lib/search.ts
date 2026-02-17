@@ -135,22 +135,31 @@ async function fetchLinkedInViaExa(name: string): Promise<string> {
   }
 }
 
-export async function searchPerson(name: string): Promise<string> {
-  // Run DDG + Exa search + LinkedIn fetch in parallel
+export type ProgressCallback = (message: string) => void;
+
+export async function searchPerson(name: string, onProgress?: ProgressCallback): Promise<string> {
+  const report = onProgress || (() => {});
+
+  // Run DDG + Exa search + LinkedIn fetch in parallel, reporting each as it completes
+  report('DuckDuckGo: career history...');
+  report('Exa: neural + keyword search...');
+  report('Exa: LinkedIn profile...');
+
   const [ddgResult, exaResults, linkedinContent] = await Promise.all([
-    duckDuckGoSearch(`${name} career work history employment resume`),
-    exaSearchPerson(name),
-    fetchLinkedInViaExa(name),
+    duckDuckGoSearch(`${name} career work history employment resume`)
+      .then(r => { report(`DuckDuckGo: ${r.snippets.length} snippets, ${r.urls.length} URLs`); return r; }),
+    exaSearchPerson(name)
+      .then(r => { report(`Exa: ${r ? r.split('\n').filter(l => l.startsWith('[Source')).length : 0} sources`); return r; }),
+    fetchLinkedInViaExa(name)
+      .then(r => { report(r ? 'LinkedIn: profile found' : 'LinkedIn: not found'); return r; }),
   ]);
 
   const parts: string[] = [];
 
-  // LinkedIn profile is the most reliable source for career data
   if (linkedinContent) {
     parts.push(linkedinContent);
   }
 
-  // DuckDuckGo snippets often contain LinkedIn-sourced career data from third-party sites
   if (ddgResult.snippets.length > 0) {
     parts.push(`[DuckDuckGo Search Results]\n${ddgResult.snippets.join('\n')}`);
   }
@@ -165,17 +174,20 @@ export async function searchPerson(name: string): Promise<string> {
   }).slice(0, 3);
 
   if (interestingUrls.length > 0) {
+    report(`Fetching ${interestingUrls.length} career sites...`);
     const pageTexts = await Promise.all(
       interestingUrls.map(async (url) => {
+        const domain = new URL(url).hostname.replace('www.', '');
         if (url.includes('docs.google.com/document/d/')) {
           const docMatch = url.match(/\/document\/d\/([^/]+)/);
           if (docMatch) {
             const textUrl = `https://docs.google.com/document/d/${docMatch[1]}/export?format=txt`;
             const text = await fetchPageText(textUrl, 10000);
-            if (text) return `[Resume: Google Doc]\n${text}`;
+            if (text) { report(`Fetched resume from Google Docs`); return `[Resume: Google Doc]\n${text}`; }
           }
         }
         const text = await fetchPageText(url, 8000);
+        if (text) report(`Fetched ${domain}`);
         return text ? `[Fetched: ${url}]\n${text}` : '';
       })
     );
@@ -234,13 +246,22 @@ async function exaSearchPerson(name: string): Promise<string> {
   }
 }
 
-export async function searchCompany(name: string): Promise<string> {
-  // Run multiple DDG searches in parallel to find different types of employees
+export async function searchCompany(name: string, onProgress?: ProgressCallback): Promise<string> {
+  const report = onProgress || (() => {});
+
+  report('DuckDuckGo: leadership...');
+  report('DuckDuckGo: employees...');
+  report('Exa: company search...');
+
   const [ddgLeadership, ddgTeam, ddgLinkedin, exaResult] = await Promise.all([
-    duckDuckGoSearch(`${name} company executives founders leadership team`),
-    duckDuckGoSearch(`"${name}" employees engineers directors managers site:linkedin.com`),
-    duckDuckGoSearch(`"${name}" company team members who works at`),
-    exaSearchCompany(name),
+    duckDuckGoSearch(`${name} company executives founders leadership team`)
+      .then(r => { report(`DuckDuckGo leadership: ${r.snippets.length} snippets`); return r; }),
+    duckDuckGoSearch(`"${name}" employees engineers directors managers site:linkedin.com`)
+      .then(r => { report(`DuckDuckGo employees: ${r.snippets.length} snippets`); return r; }),
+    duckDuckGoSearch(`"${name}" company team members who works at`)
+      .then(r => { report(`DuckDuckGo team: ${r.snippets.length} snippets`); return r; }),
+    exaSearchCompany(name)
+      .then(r => { report(`Exa: ${r ? r.split('\n').filter(l => l.startsWith('[Source')).length : 0} sources`); return r; }),
   ]);
 
   const parts: string[] = [];
@@ -254,7 +275,6 @@ export async function searchCompany(name: string): Promise<string> {
     parts.push(`[DuckDuckGo: LinkedIn]\n${ddgLinkedin.snippets.join('\n')}`);
   }
 
-  // Fetch interesting pages from all DDG results
   const allUrls = [...new Set([...ddgLeadership.urls, ...ddgTeam.urls, ...ddgLinkedin.urls])];
   const teamPageUrls = allUrls.filter(u => {
     if (u.includes('duckduckgo.com')) return false;
@@ -265,9 +285,12 @@ export async function searchCompany(name: string): Promise<string> {
   }).slice(0, 3);
 
   if (teamPageUrls.length > 0) {
+    report(`Fetching ${teamPageUrls.length} team pages...`);
     const pageTexts = await Promise.all(
       teamPageUrls.map(async (url) => {
+        const domain = new URL(url).hostname.replace('www.', '');
         const text = await fetchPageText(url, 8000);
+        if (text) report(`Fetched ${domain}`);
         return text ? `[Fetched: ${url}]\n${text}` : '';
       })
     );

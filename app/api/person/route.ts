@@ -1,4 +1,4 @@
-import { NextRequest, NextResponse } from 'next/server';
+import { NextRequest } from 'next/server';
 import { getProvider } from '@/lib/llm/registry';
 import { personPrompt, SYSTEM_PROMPT } from '@/lib/llm/prompts';
 import { parsePersonResponse, normalize, normalizeCompany } from '@/lib/parsers';
@@ -7,54 +7,89 @@ import { searchPerson } from '@/lib/search';
 import { findPersonPhotoUrl, findCompanyLogoUrl } from '@/lib/images';
 
 export async function POST(request: NextRequest) {
-  try {
-    const { name, provider: providerName, excludeCompanies } = await request.json();
-    if (!name || typeof name !== 'string') {
-      return NextResponse.json({ error: 'Name is required' }, { status: 400 });
-    }
+  const encoder = new TextEncoder();
 
-    const nameNorm = normalize(name);
+  const stream = new ReadableStream({
+    async start(controller) {
+      function send(event: string, data: unknown) {
+        controller.enqueue(encoder.encode(`event: ${event}\ndata: ${JSON.stringify(data)}\n\n`));
+      }
 
-    // Search the web for real data
-    const searchContext = await searchPerson(name);
+      try {
+        const { name, provider: providerName, excludeCompanies } = await request.json();
+        if (!name || typeof name !== 'string') {
+          send('error', { error: 'Name is required' });
+          controller.close();
+          return;
+        }
 
-    // Call LLM with search context
-    const provider = getProvider((providerName || 'anthropic') as ProviderName);
-    const prompt = personPrompt(name, searchContext, excludeCompanies);
-    const raw = await provider.generateJSON<PersonLLMResponse>(prompt, SYSTEM_PROMPT);
-    const parsed = parsePersonResponse(raw);
+        const nameNorm = normalize(name);
 
-    // Get photo URL for person
-    const photoUrl = await findPersonPhotoUrl(parsed.name);
+        // Phase 1: Web search — stream individual source progress
+        const searchContext = await searchPerson(name, (msg) => {
+          send('progress', { step: msg, phase: 'search' });
+        });
+        send('progress', { step: 'Web search complete', phase: 'search', done: true });
 
-    // Build company data with logos and normalized names (parallel lookups)
-    const companies = await Promise.all(
-      parsed.companies.map(async c => ({
-        companyName: c.company_name,
-        companyNameNormalized: normalizeCompany(c.company_name),
-        logoUrl: await findCompanyLogoUrl(c.company_name),
-        position: c.position,
-        startYear: c.start_year,
-        endYear: c.end_year,
-        projects: c.projects,
-        coworkers: c.coworkers,
-        reportsTo: c.reports_to,
-        performanceComments: c.performance_comments,
-      }))
-    );
+        // Phase 2: LLM extraction
+        const provider = getProvider((providerName || 'anthropic') as ProviderName);
+        send('progress', { step: `Extracting career data (${provider.model})...`, phase: 'llm' });
+        const prompt = personPrompt(name, searchContext, excludeCompanies);
+        const raw = await provider.generateJSON<PersonLLMResponse>(prompt, SYSTEM_PROMPT);
+        const parsed = parsePersonResponse(raw);
+        send('progress', {
+          step: `Found ${parsed.companies.length} companies`,
+          phase: 'llm',
+          done: true,
+        });
 
-    return NextResponse.json({
-      person: {
-        name: parsed.name,
-        nameNormalized: nameNorm,
-        summary: parsed.summary,
-        photoUrl,
-        companies,
-      },
-    });
-  } catch (error) {
-    console.error('Person lookup error:', error);
-    const message = error instanceof Error ? error.message : 'Failed to lookup person';
-    return NextResponse.json({ error: message }, { status: 500 });
-  }
+        // Phase 3: Images — person photo + company logos in parallel
+        send('progress', { step: 'Finding photo and company logos...', phase: 'images' });
+
+        const [photoUrl, companies] = await Promise.all([
+          findPersonPhotoUrl(parsed.name),
+          Promise.all(
+            parsed.companies.map(async c => ({
+              companyName: c.company_name,
+              companyNameNormalized: normalizeCompany(c.company_name),
+              logoUrl: await findCompanyLogoUrl(c.company_name),
+              position: c.position,
+              startYear: c.start_year,
+              endYear: c.end_year,
+              projects: c.projects,
+              coworkers: c.coworkers,
+              reportsTo: c.reports_to,
+              performanceComments: c.performance_comments,
+            }))
+          ),
+        ]);
+        send('progress', { step: 'Images loaded', phase: 'images', done: true });
+
+        // Final result
+        send('result', {
+          person: {
+            name: parsed.name,
+            nameNormalized: nameNorm,
+            summary: parsed.summary,
+            photoUrl,
+            companies,
+          },
+        });
+      } catch (error) {
+        console.error('Person lookup error:', error);
+        const message = error instanceof Error ? error.message : 'Failed to lookup person';
+        send('error', { error: message });
+      } finally {
+        controller.close();
+      }
+    },
+  });
+
+  return new Response(stream, {
+    headers: {
+      'Content-Type': 'text/event-stream',
+      'Cache-Control': 'no-cache',
+      Connection: 'keep-alive',
+    },
+  });
 }

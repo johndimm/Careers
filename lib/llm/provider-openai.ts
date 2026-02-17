@@ -5,6 +5,7 @@ const client = new OpenAI();
 
 export const openaiProvider: LLMProvider = {
   name: 'openai',
+  model: 'gpt-4o',
 
   async generateJSON<T>(prompt: string, systemPrompt: string): Promise<T> {
     const response = await client.chat.completions.create({

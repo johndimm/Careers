@@ -5,6 +5,7 @@ const genAI = new GoogleGenerativeAI(process.env.GEMINI_API_KEY || '');
 
 export const geminiProvider: LLMProvider = {
   name: 'gemini',
+  model: 'gemini-1.5-flash',
 
   async generateJSON<T>(prompt: string, systemPrompt: string): Promise<T> {
     const model = genAI.getGenerativeModel({
