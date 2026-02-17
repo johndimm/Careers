@@ -1,0 +1,71 @@
+I want to create an API that uses language models and search services to gather information about professionals and the companies they work for.
+
+Given a person's name, it should return a list of all companies they have worked for in their career, including their positions, major projects, their co-workers and the person they report to, comments about their performance, and any other information that can be found about their relation to the company.
+
+Given a company, it should return 10 to 20 persons associated with it, along with a description of the company, its products, and its history. 
+
+Given a company and a person as context, it should return people associated with the comopany who may have worked with the person.
+
+The goal is to create a bipartite graph of these connections.  Every person is connected to companies, and every company is connected to persons, but persons are not directly connected to each other and companies are not directly connected to each other.  The graph is formed dynamically by gathering information one person or one company at a time.
+
+There should be a way to change models and search services.  The keys for several models are in .env.local, including these five: 
+
+ANTHROPIC_API_KEY
+
+OPENAI_API_KEY
+
+DEEPSEEK_API_KEY
+
+GEMINI_API_KEY
+
+EXA_API_KEY
+
+The .env.local file also as a DATABASE_URL for postgres.  Use it without an ORM, using SQL statements.
+
+Test the API using John Dimm and Rick Moy as persons and Websense as company.
+
+The UI created for Constellations by John Dimm is very good. 
+
+Use photos for people and when possible logos for companies.
+
+Use exa search among other search services.
+
+The idea is to use this for people who are not famous!  Many of them will have linkedin pages, and if it is possible to use linkedin in some way please do.
+
+For John Dimm, here is the google response.  Do not hard-code this.  It is provided to show what we need to be able to find in the api.
+
+AI Overview
+John Dimm is a software engineer and consultant based in San Diego, California, who has worked for several technology companies, focusing on software engineering, data engineering, and AI. 
+His employment history includes the following companies and roles:
+Lean Software Development (Founder, 2021–Present)
+Gardyn (Staff Engineer, 2022–2024)
+Galigo (CTO and Co-founder, 2020–2021)
+Eleventh Hour Global (Software Engineer, 2020)
+Zuora (Senior Software and Data Engineer, 2018–2019)
+Acculitx (Full Stack Lead and Data Engineer, 2015–2018)
+SYSTRAN (Director of Software Engineering, 2011–2014)
+Photometria, Inc. (Director of Engineering, 2008–2010)
+Veoh Networks (Director, Search and Analytics, 2007–2008)
+Raytheon|Websense (Director, Software Engineering, 2004–2007; Chief Scientist, 2000–2004)
+VelociGen, Inc. (Director, Web Development, 1999–2000)
+Encyclopaedia Britannica, Inc. (Director, Research & Development, 1993–1999) 
+He holds a Bachelor of Science/Arts in Mathematics and Philosophy from the University of Washington. 
+
+And this is for Rick Moy:
+
+Rick Moy is a cybersecurity entrepreneur and executive who has held leadership roles at several prominent technology firms. Based on his professional history, he has worked for: 
+(Stealth) Knowledge Accelerator: Currently serving as Founder and CEO.
+DeepLight Digital: Managing Partner since 2012.
+AccuKnox: Former executive/advisor involved in Zero Trust and runtime security.
+Acalvio Technologies: Served as Chief Marketing Officer (CMO).
+Tempered: Former executive role.
+NSS Labs: Co-Founder, President, and CEO of this security research and analyst firm.
+Websense: Held a key position prior to NSS Labs.
+ESET: Held a key position.
+Protego Networks: Worked here prior to its acquisition by Cisco.
+Preventsys: Worked here prior to its acquisition by McAfee.
+Lucid Security: Worked here prior to its acquisition by Trustwave.
+HighTower: Held an early key position. 
+He is also a frequent speaker and community leader, notably appearing as a speaker for Startup San Diego. 
+
+
