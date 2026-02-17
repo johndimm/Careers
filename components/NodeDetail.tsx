@@ -1,7 +1,7 @@
 'use client';
 
-import { useState } from 'react';
-import { X, User, Building2, Briefcase, Calendar, Link2, Check } from 'lucide-react';
+import { useState, useEffect, useRef } from 'react';
+import { X, User, Building2, Briefcase, Calendar, Link2, Check, RefreshCw, Merge } from 'lucide-react';
 
 interface EdgeInfo {
   position?: string;
@@ -28,14 +28,38 @@ interface NodeDetailProps {
   edges: EdgeInfo[];
   onClose: () => void;
   onNodeClick: (id: string) => void;
+  onRetryPhoto?: (nodeId: string, currentImageUrl: string | null) => Promise<void>;
+  onMerge?: (sourceId: string, targetId: string) => void;
+  companyNodes?: { id: string; name: string }[];
 }
 
-export default function NodeDetail({ node, edges, onClose, onNodeClick }: NodeDetailProps) {
+export default function NodeDetail({ node, edges, onClose, onNodeClick, onRetryPhoto, onMerge, companyNodes }: NodeDetailProps) {
   const [copied, setCopied] = useState(false);
+  const [retryingPhoto, setRetryingPhoto] = useState(false);
+  const [showMergeList, setShowMergeList] = useState(false);
+  const prevNodeIdRef = useRef<string | null>(null);
+
+  useEffect(() => {
+    if (node?.id !== prevNodeIdRef.current) {
+      setRetryingPhoto(false);
+      setShowMergeList(false);
+      prevNodeIdRef.current = node?.id ?? null;
+    }
+  }, [node?.id]);
 
   if (!node) return null;
 
   const isPerson = node.type === 'person';
+
+  const handleRetryPhoto = async () => {
+    if (!onRetryPhoto || retryingPhoto) return;
+    setRetryingPhoto(true);
+    try {
+      await onRetryPhoto(node.id, node.imageUrl || null);
+    } finally {
+      setRetryingPhoto(false);
+    }
+  };
 
   const handleCopyLink = () => {
     const url = new URL(window.location.href.split('?')[0]);
@@ -66,6 +90,25 @@ export default function NodeDetail({ node, edges, onClose, onNodeClick }: NodeDe
             <h2 className="text-lg font-semibold text-slate-100">{node.name}</h2>
           </div>
           <div className="flex items-center gap-1">
+            {isPerson && onRetryPhoto && (
+              <button
+                onClick={handleRetryPhoto}
+                disabled={retryingPhoto}
+                className="rounded-md p-1 text-slate-500 hover:text-amber-400 transition-colors disabled:opacity-50"
+                title="Try different photo"
+              >
+                <RefreshCw className={`h-4 w-4 ${retryingPhoto ? 'animate-spin' : ''}`} />
+              </button>
+            )}
+            {!isPerson && onMerge && companyNodes && companyNodes.length > 0 && (
+              <button
+                onClick={() => setShowMergeList(prev => !prev)}
+                className="rounded-md p-1 text-slate-500 hover:text-blue-400 transition-colors"
+                title="Merge with another company"
+              >
+                <Merge className="h-4 w-4" />
+              </button>
+            )}
             <button
               onClick={handleCopyLink}
               className="rounded-md p-1 text-slate-500 hover:text-slate-300 transition-colors"
@@ -81,6 +124,21 @@ export default function NodeDetail({ node, edges, onClose, onNodeClick }: NodeDe
             </button>
           </div>
         </div>
+
+        {showMergeList && onMerge && companyNodes && (
+          <div className="mb-4 rounded-lg border border-slate-700/30 bg-slate-800/30 p-2 max-h-48 overflow-y-auto">
+            <p className="text-xs text-slate-500 mb-2">Merge into this company:</p>
+            {companyNodes.map(cn => (
+              <button
+                key={cn.id}
+                onClick={() => { onMerge(cn.id, node.id); setShowMergeList(false); }}
+                className="block w-full text-left text-sm text-slate-300 hover:text-amber-400 hover:bg-slate-700/30 rounded px-2 py-1 transition-colors"
+              >
+                {cn.name}
+              </button>
+            ))}
+          </div>
+        )}
 
         {isPerson && node.summary && (
           <p className="text-sm text-slate-400 mb-6 leading-relaxed">{node.summary}</p>

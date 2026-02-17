@@ -1,5 +1,5 @@
 import { NextRequest } from 'next/server';
-import { getProvider } from '@/lib/llm/registry';
+import { generateJSONWithFallback } from '@/lib/llm/registry';
 import { companyPrompt, SYSTEM_PROMPT } from '@/lib/llm/prompts';
 import { parseCompanyResponse, normalize, normalizeCompany } from '@/lib/parsers';
 import { CompanyLLMResponse, ProviderName } from '@/lib/llm/types';
@@ -32,13 +32,16 @@ export async function POST(request: NextRequest) {
         send('progress', { step: 'Web search complete', phase: 'search', done: true });
 
         // Phase 2: LLM extraction
-        const provider = getProvider((providerName || 'anthropic') as ProviderName);
-        send('progress', { step: `Extracting company data (${provider.model})...`, phase: 'llm' });
+        send('progress', { step: 'Extracting company data...', phase: 'llm' });
         const prompt = companyPrompt(name, searchContext, excludeNames);
-        const raw = await provider.generateJSON<CompanyLLMResponse>(prompt, SYSTEM_PROMPT);
+        const { result: raw, usedModel } = await generateJSONWithFallback<CompanyLLMResponse>(
+          (providerName || 'anthropic') as ProviderName,
+          prompt,
+          SYSTEM_PROMPT,
+        );
         const parsed = parseCompanyResponse(raw);
         send('progress', {
-          step: `Found ${parsed.notable_people.length} people`,
+          step: `Found ${parsed.notable_people.length} people (${usedModel})`,
           phase: 'llm',
           done: true,
         });

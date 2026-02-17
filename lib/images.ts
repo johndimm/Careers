@@ -138,13 +138,17 @@ async function fetchDuckDuckGoImageSearch(
 /**
  * Find a person photo via DDG Image Search, filtering out logos/icons/clipart.
  */
-async function fetchPersonImageFromDDGSearch(name: string): Promise<string | null> {
+async function fetchPersonImageFromDDGSearch(
+  name: string,
+  excludeUrls?: Set<string>,
+): Promise<string | null> {
   const exclude = ['logo', 'icon', 'emoji', 'svg', 'vector', 'clipart', 'cartoon', 'animated'];
   try {
     const candidates = await fetchDuckDuckGoImageSearch(name, 10);
     for (const r of candidates) {
       const url = String(r?.image || r?.thumbnail || '');
       if (!url) continue;
+      if (excludeUrls?.has(url)) continue;
       const lower = url.toLowerCase();
       if (exclude.some(p => lower.includes(p))) continue;
       return url;
@@ -174,6 +178,29 @@ export async function findPersonPhotoUrl(name: string): Promise<string | null> {
 
   // Try DuckDuckGo Image Search (finds photos for non-notable people)
   const ddgSearchImg = await fetchPersonImageFromDDGSearch(name);
+  if (ddgSearchImg) return ddgSearchImg;
+
+  return null;
+}
+
+/**
+ * Find an alternate photo for a person, skipping URLs already tried.
+ * Runs the same Wikipedia → DDG Instant → DDG Search pipeline but excludes
+ * any URLs in the provided list.
+ */
+export async function findAlternatePersonPhoto(
+  name: string,
+  exclude: string[],
+): Promise<string | null> {
+  const excludeSet = new Set(exclude);
+
+  const wikiImg = await fetchWikipediaImage(name, 400);
+  if (wikiImg && !excludeSet.has(wikiImg)) return wikiImg;
+
+  const ddgImg = await fetchDuckDuckGoImage(name);
+  if (ddgImg && !excludeSet.has(ddgImg)) return ddgImg;
+
+  const ddgSearchImg = await fetchPersonImageFromDDGSearch(name, excludeSet);
   if (ddgSearchImg) return ddgSearchImg;
 
   return null;

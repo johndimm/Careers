@@ -91,6 +91,7 @@ function HomeContent() {
   const [nodeProgress, setNodeProgress] = useState<Record<string, { name: string; steps: ProgressStep[] }>>({});
   const loadingNodesRef = useRef<Set<string>>(new Set());
   const lastSearchRef = useRef<{ query: string; type: 'person' | 'company' } | null>(null);
+  const triedPhotosRef = useRef<Map<string, Set<string>>>(new Map());
 
   const rebuildGraph = useCallback(() => {
     const data = store.buildGraph();
@@ -135,15 +136,27 @@ function HomeContent() {
     }
   }, [rebuildGraph]);
 
-  // Handle URL query parameters (?person=Name or ?company=Name)
-  // Clears existing graph so the recipient starts fresh from the shared entity
+  // Handle URL query parameters (?graph=ID, ?person=Name, or ?company=Name)
   const searchParams = useSearchParams();
   const urlSearchDone = useRef(false);
   useEffect(() => {
     if (urlSearchDone.current) return;
+    const graphId = searchParams.get('graph');
     const person = searchParams.get('person');
     const company = searchParams.get('company');
-    if (person) {
+
+    if (graphId) {
+      urlSearchDone.current = true;
+      fetch(`/api/graph?id=${encodeURIComponent(graphId)}`)
+        .then(res => res.ok ? res.json() : null)
+        .then(data => {
+          if (data) {
+            store.importGraph(data.persons, data.companies);
+            rebuildGraph();
+          }
+        })
+        .catch(e => console.error('Failed to load shared graph:', e));
+    } else if (person) {
       urlSearchDone.current = true;
       store.clearGraph();
       setGraphData({ nodes: [], links: [] });
@@ -154,7 +167,7 @@ function HomeContent() {
       setGraphData({ nodes: [], links: [] });
       handleSearch(company, 'company');
     }
-  }, [searchParams, handleSearch]);
+  }, [searchParams, handleSearch, rebuildGraph]);
 
   const handleNodeClick = useCallback(async (node: GraphNode) => {
     // Clear link selection when clicking a node
@@ -245,29 +258,60 @@ function HomeContent() {
     }
   }, [graphData.nodes, handleNodeClick]);
 
-  const handleShare = useCallback(() => {
-    // Find the first person node that was explicitly searched
-    const personNodes = graphData.nodes.filter(n => n.type === 'person');
-    const last = lastSearchRef.current;
-    let name = '';
-    let type: 'person' | 'company' = 'person';
+  const handleShare = useCallback(async () => {
+    if (graphData.nodes.length === 0) return;
 
-    if (last) {
-      name = last.query;
-      type = last.type;
-    } else if (personNodes.length > 0) {
-      name = personNodes[0].name;
-    }
+    try {
+      const { persons, companies } = store.exportGraph();
+      const res = await fetch('/api/graph', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ persons, companies }),
+      });
 
-    if (!name) return;
+      if (!res.ok) return;
 
-    const url = new URL(window.location.href.split('?')[0]);
-    url.searchParams.set(type, name);
-    navigator.clipboard.writeText(url.toString()).then(() => {
+      const { id } = await res.json();
+      const url = new URL(window.location.href.split('?')[0]);
+      url.searchParams.set('graph', id);
+      await navigator.clipboard.writeText(url.toString());
       setShareCopied(true);
       setTimeout(() => setShareCopied(false), 2000);
-    });
+    } catch (e) {
+      console.error('Share error:', e);
+    }
   }, [graphData.nodes]);
+
+  const handleRetryPhoto = useCallback(async (nodeId: string, currentImageUrl: string | null) => {
+    const norm = store.normFromNodeId(nodeId);
+    const node = graphData.nodes.find(n => n.id === nodeId);
+    if (!node) return;
+
+    // Accumulate all tried URLs for this node
+    if (!triedPhotosRef.current.has(nodeId)) {
+      triedPhotosRef.current.set(nodeId, new Set());
+    }
+    const tried = triedPhotosRef.current.get(nodeId)!;
+    if (currentImageUrl) tried.add(currentImageUrl);
+
+    try {
+      const res = await fetch('/api/photo', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ name: node.name, exclude: Array.from(tried) }),
+      });
+      if (!res.ok) return;
+      const { photoUrl } = await res.json();
+      if (photoUrl) {
+        tried.add(photoUrl);
+        store.updatePersonPhoto(norm, photoUrl);
+        rebuildGraph();
+        setSelectedNode(prev => prev?.id === nodeId ? { ...prev, imageUrl: photoUrl } : prev);
+      }
+    } catch (e) {
+      console.error('Retry photo error:', e);
+    }
+  }, [graphData.nodes, rebuildGraph]);
 
   const handleClear = useCallback(() => {
     store.clearGraph();
@@ -275,6 +319,17 @@ function HomeContent() {
     setSelectedNode(null);
     setSelectedLink(null);
   }, []);
+
+  const handleMerge = useCallback((sourceId: string, targetId: string) => {
+    const sourceNorm = store.normFromNodeId(sourceId);
+    const targetNorm = store.normFromNodeId(targetId);
+    store.mergeCompanies(sourceNorm, targetNorm);
+    rebuildGraph();
+    // Update selectedNode to the merged target
+    const freshGraph = store.buildGraph();
+    const targetNode = freshGraph.nodes.find(n => n.id === targetId);
+    setSelectedNode(targetNode || null);
+  }, [rebuildGraph]);
 
   // Build edge info for selected node
   const selectedEdges = selectedNode
@@ -376,6 +431,11 @@ function HomeContent() {
           edges={selectedEdges}
           onClose={() => setSelectedNode(null)}
           onNodeClick={handleDetailNodeClick}
+          onRetryPhoto={handleRetryPhoto}
+          onMerge={handleMerge}
+          companyNodes={graphData.nodes
+            .filter(n => n.type === 'company' && n.id !== selectedNode.id)
+            .map(n => ({ id: n.id, name: n.name }))}
         />
       )}
 

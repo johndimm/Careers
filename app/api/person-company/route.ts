@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { getProvider } from '@/lib/llm/registry';
+import { generateJSONWithFallback } from '@/lib/llm/registry';
 import { intersectionPrompt, SYSTEM_PROMPT } from '@/lib/llm/prompts';
 import { parseIntersectionResponse, normalize } from '@/lib/parsers';
 import { IntersectionLLMResponse, ProviderName } from '@/lib/llm/types';
@@ -16,9 +16,12 @@ export async function POST(request: NextRequest) {
     const searchContext = await searchIntersection(personName, companyName);
 
     // Call LLM
-    const provider = getProvider((providerName || 'anthropic') as ProviderName);
     const prompt = intersectionPrompt(personName, companyName, searchContext);
-    const raw = await provider.generateJSON<IntersectionLLMResponse>(prompt, SYSTEM_PROMPT);
+    const { result: raw } = await generateJSONWithFallback<IntersectionLLMResponse>(
+      (providerName || 'anthropic') as ProviderName,
+      prompt,
+      SYSTEM_PROMPT,
+    );
     const parsed = parseIntersectionResponse(raw);
 
     // Add normalized names to connections

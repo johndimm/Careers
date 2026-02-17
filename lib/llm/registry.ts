@@ -26,3 +26,29 @@ export function getProvider(name: ProviderName): LLMProvider {
 export function getAvailableProviders(): string[] {
   return Object.keys(providers);
 }
+
+export async function generateJSONWithFallback<T>(
+  preferredName: ProviderName,
+  prompt: string,
+  systemPrompt: string,
+): Promise<{ result: T; usedProvider: string; usedModel: string }> {
+  const preferred = preferredName;
+  const others = Object.keys(providers).filter(k => k !== preferred) as ProviderName[];
+  const order = [preferred, ...others];
+  const errors: string[] = [];
+
+  for (const name of order) {
+    const provider = providers[name];
+    if (!provider) continue;
+    try {
+      const result = await provider.generateJSON<T>(prompt, systemPrompt);
+      return { result, usedProvider: provider.name, usedModel: provider.model };
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : String(err);
+      console.warn(`Provider ${name} failed: ${msg}`);
+      errors.push(`${name}: ${msg}`);
+    }
+  }
+
+  throw new Error(`All LLM providers failed:\n${errors.join('\n')}`);
+}

@@ -63,10 +63,26 @@ CREATE TABLE IF NOT EXISTS settings (
 INSERT INTO settings (id, active_provider) VALUES (1, 'anthropic')
 ON CONFLICT (id) DO NOTHING;
 
+CREATE TABLE IF NOT EXISTS saved_graphs (
+  id TEXT PRIMARY KEY,
+  name TEXT,
+  persons JSONB NOT NULL,
+  companies JSONB NOT NULL,
+  created_at TIMESTAMPTZ DEFAULT now()
+);
+
 -- Add image columns to existing tables (safe to run repeatedly)
 DO $$ BEGIN
   ALTER TABLE persons ADD COLUMN IF NOT EXISTS photo_url TEXT;
   ALTER TABLE companies ADD COLUMN IF NOT EXISTS logo_url TEXT;
   ALTER TABLE companies ADD COLUMN IF NOT EXISTS domain TEXT;
+EXCEPTION WHEN OTHERS THEN NULL;
+END $$;
+
+-- Add missing columns to saved_graphs (safe to run repeatedly)
+DO $$ BEGIN
+  ALTER TABLE saved_graphs ADD COLUMN IF NOT EXISTS name TEXT;
+  ALTER TABLE saved_graphs ADD COLUMN IF NOT EXISTS persons JSONB;
+  ALTER TABLE saved_graphs ADD COLUMN IF NOT EXISTS companies JSONB;
 EXCEPTION WHEN OTHERS THEN NULL;
 END $$;

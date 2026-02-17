@@ -484,12 +484,113 @@ export function setActiveProvider(provider: string): void {
 }
 
 /**
+ * Update the photo URL for a person found by normalized name.
+ */
+export function updatePersonPhoto(nameNormalized: string, photoUrl: string | null): void {
+  if (!isBrowser()) return;
+  const persons = getPersons();
+  const key = findMatchingKey(Object.keys(persons), nameNormalized);
+  if (!key) return;
+  persons[key].photoUrl = photoUrl;
+  setPersons(persons);
+}
+
+/**
  * Clear all graph data (persons + companies) but keep settings.
  */
 export function clearGraph(): void {
   if (!isBrowser()) return;
   localStorage.removeItem(PERSONS_KEY);
   localStorage.removeItem(COMPANIES_KEY);
+}
+
+/**
+ * Export the raw localStorage graph blobs for saving/sharing.
+ */
+export function exportGraph(): { persons: unknown; companies: unknown } {
+  if (!isBrowser()) return { persons: {}, companies: {} };
+  try {
+    return {
+      persons: JSON.parse(localStorage.getItem(PERSONS_KEY) || '{}'),
+      companies: JSON.parse(localStorage.getItem(COMPANIES_KEY) || '{}'),
+    };
+  } catch {
+    return { persons: {}, companies: {} };
+  }
+}
+
+/**
+ * Import graph blobs into localStorage, replacing existing data.
+ */
+export function importGraph(persons: unknown, companies: unknown): void {
+  if (!isBrowser()) return;
+  localStorage.setItem(PERSONS_KEY, JSON.stringify(persons));
+  localStorage.setItem(COMPANIES_KEY, JSON.stringify(companies));
+}
+
+/**
+ * Return display names + normalized keys of all stored companies (for the merge picker).
+ */
+export function getCompanyNames(): { name: string; norm: string }[] {
+  if (!isBrowser()) return [];
+  const companies = getCompanies();
+  return Object.values(companies).map(c => ({ name: c.name, norm: c.nameNormalized }));
+}
+
+/**
+ * Merge source company into target company:
+ * - Merge metadata (keep target's non-empty fields, fill gaps from source)
+ * - Update target display name to "Target (Source)"
+ * - Move source's notablePeople into target (dedup by personNameNormalized)
+ * - Rewrite every person's companies[] entries from source → target
+ * - Delete the source company entry
+ */
+export function mergeCompanies(sourceNorm: string, targetNorm: string): void {
+  if (!isBrowser()) return;
+
+  const persons = getPersons();
+  const companies = getCompanies();
+
+  const sourceKey = findMatchingKey(Object.keys(companies), sourceNorm);
+  const targetKey = findMatchingKey(Object.keys(companies), targetNorm);
+  if (!sourceKey || !targetKey || sourceKey === targetKey) return;
+
+  const source = companies[sourceKey];
+  const target = companies[targetKey];
+
+  // Merge metadata: keep target's non-empty fields, fill gaps from source
+  target.description = target.description || source.description;
+  target.products = target.products || source.products;
+  target.history = target.history || source.history;
+  target.logoUrl = target.logoUrl || source.logoUrl;
+
+  // Update display name to "Target (Source)"
+  target.name = `${target.name} (${source.name})`;
+
+  // Merge notablePeople (dedup by personNameNormalized)
+  const existingNorms = new Set(target.notablePeople.map(p => p.personNameNormalized));
+  for (const p of source.notablePeople) {
+    if (!existingNorms.has(p.personNameNormalized)) {
+      target.notablePeople.push(p);
+      existingNorms.add(p.personNameNormalized);
+    }
+  }
+
+  // Rewrite every person's companies[] entries from source → target
+  for (const person of Object.values(persons)) {
+    for (const c of person.companies) {
+      if (c.companyNameNormalized === sourceKey) {
+        c.companyNameNormalized = targetKey;
+        c.companyName = target.name;
+      }
+    }
+  }
+
+  // Delete the source company
+  delete companies[sourceKey];
+
+  setPersons(persons);
+  setCompanies(companies);
 }
 
 /**
