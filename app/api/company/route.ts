@@ -26,8 +26,8 @@ export async function POST(request: NextRequest) {
         const nameNorm = normalizeCompany(name);
 
         // Phase 1: Web search — stream individual source progress
-        const searchContext = await searchCompany(name, (msg) => {
-          send('progress', { step: msg, phase: 'search' });
+        const searchContext = await searchCompany(name, (msg, done) => {
+          send('progress', { step: msg, phase: 'search', ...(done ? { done: true } : {}) });
         });
         send('progress', { step: 'Web search complete', phase: 'search', done: true });
 
@@ -47,21 +47,14 @@ export async function POST(request: NextRequest) {
         });
 
         // Phase 3: Images — logo + person photos in parallel
-        send('progress', { step: `Finding logo for ${parsed.name}...`, phase: 'images' });
-        for (const p of parsed.notable_people) {
-          send('progress', { step: `Finding photo for ${p.person_name}...`, phase: 'images' });
-        }
+        const imgProgress = (msg: string, done?: boolean) => {
+          send('progress', { step: msg, phase: 'images', ...(done ? { done: true } : {}) });
+        };
 
         const [logoUrl, ...personPhotos] = await Promise.all([
-          findCompanyLogoUrl(parsed.name).then(url => {
-            send('progress', { step: `Logo for ${parsed.name}` + (url ? '' : ' (not found)'), phase: 'images', done: true });
-            return url;
-          }),
+          findCompanyLogoUrl(parsed.name, imgProgress),
           ...parsed.notable_people.map(p =>
-            findPersonPhotoUrl(p.person_name, [parsed.name]).then(url => {
-              send('progress', { step: `Photo for ${p.person_name}` + (url ? '' : ' (not found)'), phase: 'images', done: true });
-              return url;
-            })
+            findPersonPhotoUrl(p.person_name, [parsed.name], undefined, imgProgress)
           ),
         ]);
 

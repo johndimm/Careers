@@ -135,7 +135,7 @@ async function fetchLinkedInViaExa(name: string): Promise<string> {
   }
 }
 
-export type ProgressCallback = (message: string) => void;
+export type ProgressCallback = (message: string, done?: boolean) => void;
 
 export async function searchPerson(name: string, onProgress?: ProgressCallback): Promise<string> {
   const report = onProgress || (() => {});
@@ -147,11 +147,11 @@ export async function searchPerson(name: string, onProgress?: ProgressCallback):
 
   const [ddgResult, exaResults, linkedinContent] = await Promise.all([
     duckDuckGoSearch(`${name} career work history employment resume`)
-      .then(r => { report(`DuckDuckGo: ${r.snippets.length} snippets, ${r.urls.length} URLs`); return r; }),
+      .then(r => { report(`DuckDuckGo: ${r.snippets.length} snippets, ${r.urls.length} URLs`, true); return r; }),
     exaSearchPerson(name)
-      .then(r => { report(`Exa: ${r ? r.split('\n').filter(l => l.startsWith('[Source')).length : 0} sources`); return r; }),
+      .then(r => { report(`Exa: ${r ? r.split('\n').filter(l => l.startsWith('[Source')).length : 0} sources`, true); return r; }),
     fetchLinkedInViaExa(name)
-      .then(r => { report(r ? 'LinkedIn: profile found' : 'LinkedIn: not found'); return r; }),
+      .then(r => { report(r ? 'LinkedIn: profile found' : 'LinkedIn: not found', true); return r; }),
   ]);
 
   const parts: string[] = [];
@@ -183,11 +183,11 @@ export async function searchPerson(name: string, onProgress?: ProgressCallback):
           if (docMatch) {
             const textUrl = `https://docs.google.com/document/d/${docMatch[1]}/export?format=txt`;
             const text = await fetchPageText(textUrl, 10000);
-            if (text) { report(`Fetched resume from Google Docs`); return `[Resume: Google Doc]\n${text}`; }
+            if (text) { report(`Fetched resume from Google Docs`, true); return `[Resume: Google Doc]\n${text}`; }
           }
         }
         const text = await fetchPageText(url, 8000);
-        if (text) report(`Fetched ${domain}`);
+        if (text) report(`Fetched ${domain}`, true);
         return text ? `[Fetched: ${url}]\n${text}` : '';
       })
     );
@@ -255,13 +255,13 @@ export async function searchCompany(name: string, onProgress?: ProgressCallback)
 
   const [ddgLeadership, ddgTeam, ddgLinkedin, exaResult] = await Promise.all([
     duckDuckGoSearch(`${name} company executives founders leadership team`)
-      .then(r => { report(`DuckDuckGo leadership: ${r.snippets.length} snippets`); return r; }),
+      .then(r => { report(`DuckDuckGo leadership: ${r.snippets.length} snippets`, true); return r; }),
     duckDuckGoSearch(`"${name}" employees engineers directors managers site:linkedin.com`)
-      .then(r => { report(`DuckDuckGo employees: ${r.snippets.length} snippets`); return r; }),
+      .then(r => { report(`DuckDuckGo employees: ${r.snippets.length} snippets`, true); return r; }),
     duckDuckGoSearch(`"${name}" company team members who works at`)
-      .then(r => { report(`DuckDuckGo team: ${r.snippets.length} snippets`); return r; }),
+      .then(r => { report(`DuckDuckGo team: ${r.snippets.length} snippets`, true); return r; }),
     exaSearchCompany(name)
-      .then(r => { report(`Exa: ${r ? r.split('\n').filter(l => l.startsWith('[Source')).length : 0} sources`); return r; }),
+      .then(r => { report(`Exa: ${r ? r.split('\n').filter(l => l.startsWith('[Source')).length : 0} sources`, true); return r; }),
   ]);
 
   const parts: string[] = [];
@@ -290,7 +290,7 @@ export async function searchCompany(name: string, onProgress?: ProgressCallback)
       teamPageUrls.map(async (url) => {
         const domain = new URL(url).hostname.replace('www.', '');
         const text = await fetchPageText(url, 8000);
-        if (text) report(`Fetched ${domain}`);
+        if (text) report(`Fetched ${domain}`, true);
         return text ? `[Fetched: ${url}]\n${text}` : '';
       })
     );

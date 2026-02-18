@@ -60,24 +60,27 @@ export async function validateImageUrl(url: string): Promise<string | null> {
  */
 async function fetchWikipediaImage(query: string, thumbSize: number = 400, matchName?: string): Promise<string | null> {
   try {
+    console.log(`[Wikipedia] Searching: "${query}" (matchName="${matchName || ''}")`);
     // Step 1: search for the article
     const searchUrl = `https://en.wikipedia.org/w/api.php?action=query&format=json&list=search&srsearch=${encodeURIComponent(query)}&srlimit=5&origin=*`;
     const searchRes = await fetch(searchUrl, {
       headers: { 'User-Agent': UA },
       signal: AbortSignal.timeout(5000),
     });
-    if (!searchRes.ok) return null;
+    if (!searchRes.ok) { console.log(`[Wikipedia] Search failed: ${searchRes.status}`); return null; }
     const searchData = await searchRes.json();
 
     const results = searchData?.query?.search;
-    if (!results?.length) return null;
+    if (!results?.length) { console.log(`[Wikipedia] No results`); return null; }
+    console.log(`[Wikipedia] ${results.length} results: ${results.map((r: { title: string }) => r.title).join(', ')}`);
 
     // If matchName is set, find the first result whose title matches
     let title: string;
     if (matchName) {
       const match = results.find((r: { title: string }) => nameMatches(matchName, r.title));
-      if (!match) return null;
+      if (!match) { console.log(`[Wikipedia] No name match for "${matchName}"`); return null; }
       title = match.title;
+      console.log(`[Wikipedia] Matched: "${title}"`);
     } else {
       title = results[0].title;
     }
@@ -95,8 +98,11 @@ async function fetchWikipediaImage(query: string, thumbSize: number = 400, match
     if (!pages) return null;
 
     const page = Object.values(pages)[0] as { thumbnail?: { source?: string } };
-    return page?.thumbnail?.source || null;
-  } catch {
+    const thumb = page?.thumbnail?.source || null;
+    console.log(`[Wikipedia] Image for "${title}": ${thumb || 'none'}`);
+    return thumb;
+  } catch (e) {
+    console.error(`[Wikipedia] Error:`, e);
     return null;
   }
 }
@@ -187,6 +193,17 @@ async function fetchPersonImageFromDDGSearch(
   const exclude = ['logo', 'icon', 'emoji', 'svg', 'vector', 'clipart', 'cartoon', 'animated'];
   try {
     const candidates = await fetchDuckDuckGoImageSearch(name, 10);
+    // First pass: prefer results whose title mentions the person's name
+    for (const r of candidates) {
+      const url = String(r?.image || r?.thumbnail || '');
+      if (!url) continue;
+      if (excludeUrls?.has(url)) continue;
+      const lower = url.toLowerCase();
+      if (exclude.some(p => lower.includes(p))) continue;
+      const title = r.title || '';
+      if (nameMatches(name, title)) return url;
+    }
+    // Second pass: accept any result if name-matched ones weren't found
     for (const r of candidates) {
       const url = String(r?.image || r?.thumbnail || '');
       if (!url) continue;
@@ -202,37 +219,63 @@ async function fetchPersonImageFromDDGSearch(
 }
 
 /**
- * Google Custom Search — image search via the JSON API.
- * Requires GOOGLE_API_KEY and GOOGLE_CSE_ID env vars.
- * Returns the first face/photo image URL, filtering out logos and icons.
+ * Serper.dev Google Image Search.
+ * Requires SERPER_API_KEY env var.
+ * Validates that result titles match the person name to avoid wrong-person photos.
  */
-async function fetchGoogleImage(
+async function fetchSerperImage(
   query: string,
+  matchName?: string,
   excludeUrls?: Set<string>,
 ): Promise<string | null> {
-  const apiKey = process.env.GOOGLE_API_KEY;
-  const cseId = process.env.GOOGLE_CSE_ID;
-  if (!apiKey || !cseId) return null;
+  const apiKey = process.env.SERPER_API_KEY;
+  if (!apiKey) { console.log('[Serper] Skipping — missing SERPER_API_KEY'); return null; }
 
-  const badPatterns = ['logo', 'icon', 'emoji', 'svg', 'vector', 'clipart', 'cartoon', 'animated', 'placeholder', 'default'];
+  const badPatterns = ['logo', 'icon', 'emoji', 'svg', 'vector', 'clipart', 'cartoon', 'animated', 'placeholder', 'default', 'banner'];
 
   try {
-    const url = `https://www.googleapis.com/customsearch/v1?key=${apiKey}&cx=${cseId}&q=${encodeURIComponent(query)}&searchType=image&imgType=face&num=5`;
-    const res = await fetch(url, { signal: AbortSignal.timeout(8000) });
-    if (!res.ok) return null;
+    console.log(`[Serper] Image search: "${query}"`);
+    const res = await fetch('https://google.serper.dev/images', {
+      method: 'POST',
+      headers: {
+        'X-API-KEY': apiKey,
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify({ q: query, num: 10 }),
+      signal: AbortSignal.timeout(8000),
+    });
+    if (!res.ok) {
+      const errBody = await res.text().catch(() => '');
+      console.error(`[Serper] API error: ${res.status} — ${errBody}`);
+      return null;
+    }
     const data = await res.json();
+    const images: Array<{ title?: string; imageUrl?: string; source?: string }> = data?.images || [];
+    console.log(`[Serper] Got ${images.length} results for "${query}"`);
 
-    const items: Array<{ link?: string }> = data?.items || [];
-    for (const item of items) {
-      const imgUrl = item.link;
+    for (const img of images) {
+      const title = img.title || '';
+      const imgUrl = img.imageUrl || '';
       if (!imgUrl) continue;
-      if (excludeUrls?.has(imgUrl)) continue;
+
+      console.log(`[Serper]   candidate: "${title}" — ${imgUrl.slice(0, 80)}...`);
+
+      // Check name match
+      if (matchName && !nameMatches(matchName, title)) {
+        console.log(`[Serper]   → skipped (name mismatch)`);
+        continue;
+      }
+
+      if (excludeUrls?.has(imgUrl)) { console.log(`[Serper]   → skipped (excluded)`); continue; }
       const lower = imgUrl.toLowerCase();
-      if (badPatterns.some(p => lower.includes(p))) continue;
+      if (badPatterns.some(p => lower.includes(p))) { console.log(`[Serper]   → skipped (bad pattern)`); continue; }
+
+      console.log(`[Serper]   → ACCEPTED`);
       return imgUrl;
     }
-  } catch {
-    // fall through
+    console.log(`[Serper] No suitable image found`);
+  } catch (e) {
+    console.error(`[Serper] Error:`, e);
   }
   return null;
 }
@@ -246,31 +289,67 @@ async function fetchGoogleImage(
  * Tries: Wikipedia page image → DuckDuckGo Instant Answer → DuckDuckGo Image Search.
  * When companyHints are provided, retries with "name + company" for better disambiguation.
  */
-export async function findPersonPhotoUrl(name: string, companyHints?: string[]): Promise<string | null> {
+type ImageProgressCallback = (message: string, done?: boolean) => void;
+
+export async function findPersonPhotoUrl(
+  name: string,
+  companyHints?: string[],
+  searchQuery?: string,
+  onProgress?: ImageProgressCallback,
+): Promise<string | null> {
+  const report = onProgress || (() => {});
+
+  console.log(`[Photo] ${name}: starting photo search (query="${searchQuery || name}", hints=${companyHints?.join(', ') || 'none'})`);
+
   // Try plain name first
+  report('Searching Wikipedia...');
+  console.log(`[Photo] ${name}: trying Wikipedia...`);
   const wikiImg = await fetchWikipediaImage(name, 400, name);
-  if (wikiImg) return wikiImg;
+  console.log(`[Photo] ${name}: Wikipedia → ${wikiImg || 'null'}`);
+  if (wikiImg) { report('Found photo on Wikipedia', true); return wikiImg; }
 
+  report('Searching DuckDuckGo...');
+  console.log(`[Photo] ${name}: trying DuckDuckGo Instant...`);
   const ddgImg = await fetchDuckDuckGoImage(name, name);
-  if (ddgImg) return ddgImg;
+  console.log(`[Photo] ${name}: DuckDuckGo Instant → ${ddgImg || 'null'}`);
+  if (ddgImg) { report('Found photo on DuckDuckGo', true); return ddgImg; }
 
-  // Google Custom Search — best for non-famous people
-  const googleImg = await fetchGoogleImage(name);
-  if (googleImg) return googleImg;
+  // Serper site-restricted search — good for non-famous people
+  const googleQuery = searchQuery || name;
+  report(`Searching Google for "${googleQuery}"...`);
+  console.log(`[Photo] ${name}: trying Serper with query="${googleQuery}"...`);
+  const googleImg = await fetchSerperImage(googleQuery, name);
+  console.log(`[Photo] ${name}: Serper → ${googleImg || 'null'}`);
+  if (googleImg) { report('Found photo via Google', true); return googleImg; }
 
-  // Retry Wikipedia with company context for disambiguation
+  // DDG Image Search with full query for disambiguation
+  const ddgQuery = searchQuery && searchQuery !== name ? searchQuery : name;
+  report(`Searching DuckDuckGo Images for "${ddgQuery}"...`);
+  console.log(`[Photo] ${name}: trying DDG Image Search with query="${ddgQuery}"...`);
+  const ddgSearchImg = await fetchPersonImageFromDDGSearch(ddgQuery);
+  console.log(`[Photo] ${name}: DDG Image Search → ${ddgSearchImg || 'null'}`);
+  if (ddgSearchImg) { report('Found photo via DuckDuckGo Images', true); return ddgSearchImg; }
+
+  // Retry with company context for disambiguation
   if (companyHints?.length) {
     for (const company of companyHints.slice(0, 3)) {
       const query = `${name} ${company}`;
+      report(`Searching for ${name} + ${company}...`);
+      console.log(`[Photo] ${name}: trying Wikipedia + Google + DDG with company "${company}"...`);
       const wikiImg2 = await fetchWikipediaImage(query, 400, name);
-      if (wikiImg2) return wikiImg2;
+      console.log(`[Photo] ${name}: Wikipedia (${company}) → ${wikiImg2 || 'null'}`);
+      if (wikiImg2) { report(`Found photo on Wikipedia (${company})`, true); return wikiImg2; }
+      const googleImg2 = await fetchSerperImage(query, name);
+      console.log(`[Photo] ${name}: Serper (${company}) → ${googleImg2 || 'null'}`);
+      if (googleImg2) { report(`Found photo via Google (${company})`, true); return googleImg2; }
+      const ddgSearchImg2 = await fetchPersonImageFromDDGSearch(query);
+      console.log(`[Photo] ${name}: DDG Images (${company}) → ${ddgSearchImg2 || 'null'}`);
+      if (ddgSearchImg2) { report(`Found photo via DuckDuckGo Images (${company})`, true); return ddgSearchImg2; }
     }
   }
 
-  // DDG Image Search as last resort
-  const ddgSearchImg = await fetchPersonImageFromDDGSearch(name);
-  if (ddgSearchImg) return ddgSearchImg;
-
+  console.log(`[Photo] ${name}: NO PHOTO FOUND`);
+  report('No photo found', true);
   return null;
 }
 
@@ -291,7 +370,7 @@ export async function findAlternatePersonPhoto(
   const ddgImg = await fetchDuckDuckGoImage(name, name);
   if (ddgImg && !excludeSet.has(ddgImg)) return ddgImg;
 
-  const googleImg = await fetchGoogleImage(name, excludeSet);
+  const googleImg = await fetchSerperImage(name, name, excludeSet);
   if (googleImg) return googleImg;
 
   const ddgSearchImg = await fetchPersonImageFromDDGSearch(name, excludeSet);
@@ -372,17 +451,21 @@ export function getCompanyLogoUrl(companyName: string, domain?: string): string 
  * Find and validate a company logo.
  * Tries: DuckDuckGo Instant Answer → Google Favicon → Wikipedia page image.
  */
-export async function findCompanyLogoUrl(companyName: string): Promise<string | null> {
+export async function findCompanyLogoUrl(companyName: string, onProgress?: ImageProgressCallback): Promise<string | null> {
+  const report = onProgress || (() => {});
+
   // 1. DuckDuckGo Instant Answer (good quality entity images)
+  report(`Logo: searching DuckDuckGo for ${companyName}...`);
   const ddgImg = await fetchDuckDuckGoImage(companyName);
-  if (ddgImg) return ddgImg;
+  if (ddgImg) { report(`Logo for ${companyName} found`, true); return ddgImg; }
 
   // 2. Google Favicon V2 (reliable for active domains)
+  report(`Logo: checking favicon for ${companyName}...`);
   const domain = guessCompanyDomain(companyName);
   if (domain) {
     const favUrl = googleFaviconUrl(domain);
     const validated = await validateImageUrl(favUrl);
-    if (validated) return validated;
+    if (validated) { report(`Logo for ${companyName} found`, true); return validated; }
   }
 
   // 3. Try slug-based domain favicon
@@ -390,13 +473,15 @@ export async function findCompanyLogoUrl(companyName: string): Promise<string | 
   if (slug.length >= 3 && slug + '.com' !== domain) {
     const favUrl = googleFaviconUrl(`${slug}.com`);
     const validated = await validateImageUrl(favUrl);
-    if (validated) return validated;
+    if (validated) { report(`Logo for ${companyName} found`, true); return validated; }
   }
 
   // 4. Wikipedia page image (useful for defunct companies with articles)
+  report(`Logo: searching Wikipedia for ${companyName}...`);
   const wikiImg = await fetchWikipediaImage(companyName, 200);
-  if (wikiImg) return wikiImg;
+  if (wikiImg) { report(`Logo for ${companyName} found`, true); return wikiImg; }
 
+  report(`Logo for ${companyName} not found`, true);
   return null;
 }
 

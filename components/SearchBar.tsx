@@ -17,7 +17,6 @@ export default function SearchBar({ onSearch, disabled }: SearchBarProps) {
     const trimmed = query.trim();
     if (!trimmed || disabled) return;
     onSearch(trimmed, searchType);
-    setQuery('');
   };
 
   return (
