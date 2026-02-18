@@ -1,7 +1,7 @@
 'use client';
 
-import { useState, useEffect } from 'react';
-import { Settings } from 'lucide-react';
+import { useState, useEffect, useCallback } from 'react';
+import { Settings, Loader2, Check, AlertCircle } from 'lucide-react';
 import * as store from '@/lib/store';
 
 export default function SettingsPanel() {
@@ -9,10 +9,14 @@ export default function SettingsPanel() {
   const [activeProvider, setActiveProvider] = useState('deepseek');
   const [available, setAvailable] = useState<string[]>([]);
   const [resumeUrl, setResumeUrl] = useState('');
+  const [resumeName, setResumeName] = useState('');
+  const [resumeStatus, setResumeStatus] = useState<'idle' | 'loading' | 'ok' | 'error'>('idle');
 
   useEffect(() => {
     setActiveProvider(store.getActiveProvider());
     setResumeUrl(store.getResumeUrl());
+    setResumeName(store.getResumeName());
+    if (store.getResumeName()) setResumeStatus('ok');
 
     fetch('/api/settings')
       .then(r => r.json())
@@ -27,9 +31,61 @@ export default function SettingsPanel() {
     setActiveProvider(provider);
   };
 
+  const extractResumeName = useCallback(async (url: string) => {
+    const trimmed = url.trim();
+    if (!trimmed) {
+      setResumeName('');
+      setResumeStatus('idle');
+      store.setResumeName('');
+      return;
+    }
+
+    setResumeStatus('loading');
+    try {
+      const res = await fetch('/api/resume', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ url: trimmed }),
+      });
+      const data = await res.json();
+      if (res.ok && data.name) {
+        setResumeName(data.name);
+        store.setResumeName(data.name);
+        setResumeStatus('ok');
+      } else {
+        setResumeName('');
+        store.setResumeName('');
+        setResumeStatus('error');
+      }
+    } catch {
+      setResumeName('');
+      store.setResumeName('');
+      setResumeStatus('error');
+    }
+  }, []);
+
   const handleResumeUrlChange = (url: string) => {
     setResumeUrl(url);
     store.setResumeUrl(url);
+  };
+
+  const handleResumeUrlBlur = () => {
+    const trimmed = resumeUrl.trim();
+    // Only re-extract if URL changed from what we already extracted
+    if (trimmed && trimmed !== store.getResumeUrl()) {
+      store.setResumeUrl(trimmed);
+    }
+    // Extract name if we don't have one yet or URL changed
+    if (trimmed && !resumeName) {
+      extractResumeName(trimmed);
+    }
+  };
+
+  const handleResumeUrlKeyDown = (e: React.KeyboardEvent) => {
+    if (e.key === 'Enter') {
+      e.preventDefault();
+      extractResumeName(resumeUrl);
+    }
   };
 
   const providerLabels: Record<string, string> = {
@@ -50,7 +106,7 @@ export default function SettingsPanel() {
       </button>
 
       {isOpen && (
-        <div className="absolute right-0 top-full mt-1 z-50 w-72 rounded-lg border border-slate-700/50 bg-slate-900/95 p-2 backdrop-blur-xl shadow-xl">
+        <div className="absolute right-0 top-full mt-1 z-50 w-80 rounded-lg border border-slate-700/50 bg-slate-900/95 p-2 backdrop-blur-xl shadow-xl">
           <p className="px-2 py-1 text-xs font-semibold text-slate-500 uppercase tracking-wider">LLM Provider</p>
           {available.map(p => (
             <button
@@ -72,10 +128,34 @@ export default function SettingsPanel() {
               type="text"
               value={resumeUrl}
               onChange={(e) => handleResumeUrlChange(e.target.value)}
-              placeholder="https://example.com/resume"
+              onBlur={handleResumeUrlBlur}
+              onKeyDown={handleResumeUrlKeyDown}
+              placeholder="https://example.com/resume.pdf"
               className="mt-1 w-full rounded-md border border-slate-700/50 bg-slate-800/50 px-2 py-1.5 text-sm text-slate-200 placeholder-slate-500 outline-none focus:border-slate-600 focus:ring-1 focus:ring-slate-600"
             />
-            <p className="px-2 mt-1 text-[11px] text-slate-600">Used when searching for people</p>
+            <div className="px-2 mt-1.5 flex items-center gap-1.5">
+              {resumeStatus === 'loading' && (
+                <>
+                  <Loader2 className="h-3 w-3 animate-spin text-amber-500" />
+                  <span className="text-[11px] text-slate-500">Reading resume...</span>
+                </>
+              )}
+              {resumeStatus === 'ok' && resumeName && (
+                <>
+                  <Check className="h-3 w-3 text-green-400" />
+                  <span className="text-[11px] text-green-400">{resumeName}</span>
+                </>
+              )}
+              {resumeStatus === 'error' && (
+                <>
+                  <AlertCircle className="h-3 w-3 text-red-400" />
+                  <span className="text-[11px] text-red-400">Could not read resume</span>
+                </>
+              )}
+              {resumeStatus === 'idle' && (
+                <span className="text-[11px] text-slate-600">Enter URL and press Enter</span>
+              )}
+            </div>
           </div>
         </div>
       )}

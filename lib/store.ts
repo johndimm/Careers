@@ -55,6 +55,7 @@ interface StoredCompany {
 interface StoredSettings {
   activeProvider: string;
   resumeUrl?: string;
+  resumeName?: string;
 }
 
 // --- localStorage keys ---
@@ -513,6 +514,23 @@ export function getResumeUrl(): string {
 export function setResumeUrl(url: string): void {
   const settings = getSettings();
   settings.resumeUrl = url;
+  setSettings(settings);
+}
+
+/**
+ * Get the resume owner name from localStorage settings.
+ */
+export function getResumeName(): string {
+  const settings = getSettings();
+  return settings.resumeName || '';
+}
+
+/**
+ * Set the resume owner name in localStorage settings.
+ */
+export function setResumeName(name: string): void {
+  const settings = getSettings();
+  settings.resumeName = name;
   setSettings(settings);
 }
 

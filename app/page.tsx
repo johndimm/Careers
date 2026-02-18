@@ -11,6 +11,7 @@ import NodeDetail from '@/components/NodeDetail';
 import EdgeDetail from '@/components/EdgeDetail';
 import LoadingSpinner from '@/components/LoadingSpinner';
 import * as store from '@/lib/store';
+import { normalize } from '@/lib/parsers';
 
 interface GraphData {
   nodes: GraphNode[];
@@ -119,7 +120,15 @@ function HomeContent() {
       const body: Record<string, unknown> = { name: query, provider: store.getActiveProvider() };
       if (type === 'person') {
         const resumeUrl = store.getResumeUrl();
-        if (resumeUrl) body.resumeUrl = resumeUrl;
+        const resumeName = store.getResumeName();
+        if (resumeUrl && resumeName) {
+          // Only send resume if the searched name matches the resume owner
+          const qNorm = normalize(query);
+          const rNorm = normalize(resumeName);
+          if (qNorm === rNorm || qNorm.includes(rNorm) || rNorm.includes(qNorm)) {
+            body.resumeUrl = resumeUrl;
+          }
+        }
       }
       const data = await fetchSSE(
         endpoint,
@@ -221,7 +230,18 @@ function HomeContent() {
         });
     } else if (node.type === 'person') {
       const excludeCompanies = store.getPersonCompanyNames(norm);
-      const resumeUrl = store.getPersonResumeUrl(norm);
+      // Check per-person stored URL first, then fall back to settings if name matches
+      let resumeUrl = store.getPersonResumeUrl(norm);
+      if (!resumeUrl) {
+        const settingsUrl = store.getResumeUrl();
+        const settingsName = store.getResumeName();
+        if (settingsUrl && settingsName) {
+          const rNorm = normalize(settingsName);
+          if (norm === rNorm || norm.includes(rNorm) || rNorm.includes(norm)) {
+            resumeUrl = settingsUrl;
+          }
+        }
+      }
       loadingNodesRef.current.add(nodeId);
       setNodeProgress(prev => ({ ...prev, [nodeId]: { name: nodeName, steps: [] } }));
       rebuildGraph();
