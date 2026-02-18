@@ -58,6 +58,13 @@ export default function SearchBar({ onSearch, disabled }: SearchBarProps) {
           className="h-9 w-64 rounded-lg border border-slate-700/50 bg-slate-800/50 pl-9 pr-3 text-sm text-slate-200 placeholder-slate-500 outline-none focus:border-slate-600 focus:ring-1 focus:ring-slate-600 disabled:opacity-50"
         />
       </div>
+      <button
+        type="submit"
+        disabled={disabled}
+        className="h-9 rounded-lg border border-slate-700/50 bg-slate-800/50 px-3 text-sm text-slate-400 transition-colors hover:text-slate-200 hover:border-slate-600 disabled:opacity-50"
+      >
+        <Search className="h-4 w-4" />
+      </button>
     </form>
   );
 }

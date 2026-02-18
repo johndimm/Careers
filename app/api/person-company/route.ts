@@ -18,7 +18,7 @@ export async function POST(request: NextRequest) {
     // Call LLM
     const prompt = intersectionPrompt(personName, companyName, searchContext);
     const { result: raw } = await generateJSONWithFallback<IntersectionLLMResponse>(
-      (providerName || 'anthropic') as ProviderName,
+      (providerName || 'deepseek') as ProviderName,
       prompt,
       SYSTEM_PROMPT,
     );

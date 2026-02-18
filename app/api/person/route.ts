@@ -16,7 +16,7 @@ export async function POST(request: NextRequest) {
       }
 
       try {
-        const { name, provider: providerName, excludeCompanies } = await request.json();
+        const { name, provider: providerName, excludeCompanies, resumeUrl } = await request.json();
         if (!name || typeof name !== 'string') {
           send('error', { error: 'Name is required' });
           controller.close();
@@ -28,14 +28,14 @@ export async function POST(request: NextRequest) {
         // Phase 1: Web search — stream individual source progress
         const searchContext = await searchPerson(name, (msg, done) => {
           send('progress', { step: msg, phase: 'search', ...(done ? { done: true } : {}) });
-        });
+        }, resumeUrl);
         send('progress', { step: 'Web search complete', phase: 'search', done: true });
 
         // Phase 2: LLM extraction
         send('progress', { step: 'Extracting career data...', phase: 'llm' });
         const prompt = personPrompt(name, searchContext, excludeCompanies);
         const { result: raw, usedModel } = await generateJSONWithFallback<PersonLLMResponse>(
-          (providerName || 'anthropic') as ProviderName,
+          (providerName || 'deepseek') as ProviderName,
           prompt,
           SYSTEM_PROMPT,
         );
@@ -78,6 +78,7 @@ export async function POST(request: NextRequest) {
             nameNormalized: nameNorm,
             summary: parsed.summary,
             photoUrl,
+            resumeUrl: resumeUrl || null,
             companies,
           },
         });

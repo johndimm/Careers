@@ -15,6 +15,8 @@ Based ONLY on the search results above, extract the professional career of "${na
 
 IMPORTANT: Only include positions that "${name}" PERSONALLY held. Do NOT include positions held by other people at the same companies. Each entry must be a role that "${name}" had.
 
+IMPORTANT: If a [Resume] section is present above, treat it as the PRIMARY and most authoritative source. Extract EVERY company and position listed in the resume — do not skip any, even if they appear minor or short-term. Web search results supplement the resume but should not override it.
+
 Return a JSON object with this exact structure:
 {
   "name": "Full proper name",

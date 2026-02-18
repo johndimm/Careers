@@ -285,8 +285,43 @@ async function fetchSerperImage(
 // ---------------------------------------------------------------------------
 
 /**
+ * Try to find a person's LinkedIn profile photo via Exa.
+ */
+async function fetchLinkedInPhoto(name: string): Promise<string | null> {
+  try {
+    const Exa = (await import('exa-js')).default;
+    const apiKey = process.env.EXA_API_KEY;
+    if (!apiKey) return null;
+    const exa = new Exa(apiKey);
+    const results = await exa.getContents(
+      [`https://www.linkedin.com/in/${name.toLowerCase().replace(/\s+/g, '')}`],
+      { text: { maxCharacters: 100 } }
+    );
+    const image = results.results?.[0]?.image;
+    if (image && image.includes('licdn.com') && image.includes('profile')) {
+      const validated = await validateImageUrl(image);
+      if (validated) return validated;
+    }
+    // Fallback: search for LinkedIn profile
+    const search = await exa.search(`${name} LinkedIn profile`, { type: 'keyword', numResults: 3 });
+    const linkedinUrl = search.results.find(r => r.url.includes('linkedin.com/in/'))?.url;
+    if (linkedinUrl) {
+      const contents = await exa.getContents([linkedinUrl], { text: { maxCharacters: 100 } });
+      const img = contents.results?.[0]?.image;
+      if (img && img.includes('licdn.com') && img.includes('profile')) {
+        return await validateImageUrl(img);
+      }
+    }
+    return null;
+  } catch (e) {
+    console.log(`[Photo] LinkedIn via Exa failed:`, e);
+    return null;
+  }
+}
+
+/**
  * Find a photo for a person.
- * Tries: Wikipedia page image → DuckDuckGo Instant Answer → DuckDuckGo Image Search.
+ * Tries: LinkedIn (Exa) → Wikipedia → DuckDuckGo → Google → DuckDuckGo Images.
  * When companyHints are provided, retries with "name + company" for better disambiguation.
  */
 type ImageProgressCallback = (message: string, done?: boolean) => void;
@@ -300,6 +335,13 @@ export async function findPersonPhotoUrl(
   const report = onProgress || (() => {});
 
   console.log(`[Photo] ${name}: starting photo search (query="${searchQuery || name}", hints=${companyHints?.join(', ') || 'none'})`);
+
+  // Try LinkedIn first — most reliable for professionals
+  report('Searching LinkedIn...');
+  console.log(`[Photo] ${name}: trying LinkedIn via Exa...`);
+  const linkedinImg = await fetchLinkedInPhoto(name);
+  console.log(`[Photo] ${name}: LinkedIn → ${linkedinImg || 'null'}`);
+  if (linkedinImg) { report('Found photo on LinkedIn', true); return linkedinImg; }
 
   // Try plain name first
   report('Searching Wikipedia...');

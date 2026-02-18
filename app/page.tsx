@@ -116,9 +116,14 @@ function HomeContent() {
 
     try {
       const endpoint = type === 'person' ? '/api/person' : '/api/company';
+      const body: Record<string, unknown> = { name: query, provider: store.getActiveProvider() };
+      if (type === 'person') {
+        const resumeUrl = store.getResumeUrl();
+        if (resumeUrl) body.resumeUrl = resumeUrl;
+      }
       const data = await fetchSSE(
         endpoint,
-        { name: query, provider: store.getActiveProvider() },
+        body,
         (step) => setProgressSteps(prev => [...prev, step]),
       );
 
@@ -216,10 +221,11 @@ function HomeContent() {
         });
     } else if (node.type === 'person') {
       const excludeCompanies = store.getPersonCompanyNames(norm);
+      const resumeUrl = store.getPersonResumeUrl(norm);
       loadingNodesRef.current.add(nodeId);
       setNodeProgress(prev => ({ ...prev, [nodeId]: { name: nodeName, steps: [] } }));
       rebuildGraph();
-      fetchSSE('/api/person', { name: nodeName, provider: store.getActiveProvider(), excludeCompanies }, onNodeProgress)
+      fetchSSE('/api/person', { name: nodeName, provider: store.getActiveProvider(), excludeCompanies, ...(resumeUrl ? { resumeUrl } : {}) }, onNodeProgress)
         .then(data => {
           if (data?.person) store.mergePersonData(data.person as Parameters<typeof store.mergePersonData>[0]);
         })

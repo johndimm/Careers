@@ -35,7 +35,7 @@ export async function POST(request: NextRequest) {
         send('progress', { step: 'Extracting company data...', phase: 'llm' });
         const prompt = companyPrompt(name, searchContext, excludeNames);
         const { result: raw, usedModel } = await generateJSONWithFallback<CompanyLLMResponse>(
-          (providerName || 'anthropic') as ProviderName,
+          (providerName || 'deepseek') as ProviderName,
           prompt,
           SYSTEM_PROMPT,
         );

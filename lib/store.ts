@@ -24,6 +24,7 @@ interface StoredPerson {
   nameNormalized: string;
   summary: string;
   photoUrl: string | null;
+  resumeUrl: string | null;
   expanded: boolean;
   companies: StoredCompanyEdge[];
 }
@@ -53,6 +54,7 @@ interface StoredCompany {
 
 interface StoredSettings {
   activeProvider: string;
+  resumeUrl?: string;
 }
 
 // --- localStorage keys ---
@@ -108,7 +110,7 @@ function setCompanies(data: Record<string, StoredCompany>): void {
 }
 
 function getSettings(): StoredSettings {
-  if (!isBrowser()) return { activeProvider: 'anthropic' };
+  if (!isBrowser()) return { activeProvider: 'deepseek' };
   try {
     return JSON.parse(localStorage.getItem(SETTINGS_KEY) || '{}') as StoredSettings;
   } catch {
@@ -128,6 +130,7 @@ export interface PersonApiData {
   nameNormalized: string;
   summary: string;
   photoUrl: string | null;
+  resumeUrl?: string | null;
   companies: Array<{
     companyName: string;
     companyNameNormalized: string;
@@ -205,6 +208,7 @@ export function mergePersonData(data: PersonApiData): void {
     nameNormalized: personNorm,
     summary: data.summary || existing?.summary || '',
     photoUrl: data.photoUrl || existing?.photoUrl || null,
+    resumeUrl: data.resumeUrl || existing?.resumeUrl || null,
     expanded: true,
     companies: mergedCompanies,
   };
@@ -296,6 +300,7 @@ export function mergeCompanyData(data: CompanyApiData): void {
         nameNormalized: pNorm,
         summary: '',
         photoUrl: p.photoUrl,
+        resumeUrl: null,
         expanded: false,
         companies: [],
       };
@@ -456,6 +461,17 @@ export function getCompanyPeopleNames(companyNormalized: string): string[] {
 }
 
 /**
+ * Get the stored resume URL for a person, if any.
+ */
+export function getPersonResumeUrl(nameNormalized: string): string | null {
+  if (!isBrowser()) return null;
+  const persons = getPersons();
+  const key = findMatchingKey(Object.keys(persons), nameNormalized);
+  if (!key) return null;
+  return persons[key].resumeUrl || null;
+}
+
+/**
  * Get the names of companies already known for a person.
  */
 export function getPersonCompanyNames(personNormalized: string): string[] {
@@ -471,7 +487,7 @@ export function getPersonCompanyNames(personNormalized: string): string[] {
  */
 export function getActiveProvider(): string {
   const settings = getSettings();
-  return settings.activeProvider || 'anthropic';
+  return settings.activeProvider || 'deepseek';
 }
 
 /**
@@ -480,6 +496,23 @@ export function getActiveProvider(): string {
 export function setActiveProvider(provider: string): void {
   const settings = getSettings();
   settings.activeProvider = provider;
+  setSettings(settings);
+}
+
+/**
+ * Get the resume URL from localStorage settings.
+ */
+export function getResumeUrl(): string {
+  const settings = getSettings();
+  return settings.resumeUrl || '';
+}
+
+/**
+ * Set the resume URL in localStorage settings.
+ */
+export function setResumeUrl(url: string): void {
+  const settings = getSettings();
+  settings.resumeUrl = url;
   setSettings(settings);
 }
 

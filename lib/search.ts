@@ -1,4 +1,7 @@
 import Exa from 'exa-js';
+// Import pdf-parse internals directly to avoid test-file-loading bug in index.js
+// eslint-disable-next-line @typescript-eslint/no-require-imports
+const pdfParse = require('pdf-parse/lib/pdf-parse');
 
 let exa: Exa | null = null;
 
@@ -76,6 +79,28 @@ async function duckDuckGoSearch(query: string): Promise<{ snippets: string[]; ur
   }
 }
 
+// Fetch a PDF URL and extract text
+async function fetchPdfText(url: string, maxLength: number = 15000): Promise<string> {
+  try {
+    const res = await fetch(url, {
+      headers: { 'User-Agent': 'Mozilla/5.0 (compatible; CareersGraph/1.0)' },
+      signal: AbortSignal.timeout(15000),
+    });
+    const buffer = Buffer.from(await res.arrayBuffer());
+    const data = await pdfParse(buffer);
+    return data.text.replace(/\s+/g, ' ').trim().slice(0, maxLength);
+  } catch (e) {
+    console.error('[Search] PDF fetch error:', e);
+    return '';
+  }
+}
+
+// Check if a URL points to a PDF
+function isPdfUrl(url: string): boolean {
+  const lower = url.toLowerCase();
+  return lower.endsWith('.pdf') || lower.includes('.pdf?') || lower.includes('format=pdf');
+}
+
 // Fetch a URL and extract text content
 async function fetchPageText(url: string, maxLength: number = 5000): Promise<string> {
   try {
@@ -137,8 +162,28 @@ async function fetchLinkedInViaExa(name: string): Promise<string> {
 
 export type ProgressCallback = (message: string, done?: boolean) => void;
 
-export async function searchPerson(name: string, onProgress?: ProgressCallback): Promise<string> {
+export async function searchPerson(name: string, onProgress?: ProgressCallback, resumeUrl?: string): Promise<string> {
   const report = onProgress || (() => {});
+
+  const parts: string[] = [];
+
+  // If a resume URL is provided, fetch it first
+  if (resumeUrl) {
+    const url = resumeUrl.trim();
+    const pdf = isPdfUrl(url);
+    report(`Fetching resume${pdf ? ' (PDF)' : ''}...`);
+    console.log(`[Search] Resume URL: "${url}", isPdf: ${pdf}`);
+    const resumeText = pdf
+      ? await fetchPdfText(url, 15000)
+      : await fetchPageText(url, 15000);
+    console.log(`[Search] Resume text length: ${resumeText.length}`);
+    if (resumeText) {
+      parts.push(`[Resume]\n${resumeText}`);
+      report(`Resume fetched (${resumeText.length} chars)`, true);
+    } else {
+      report('Resume: could not fetch', true);
+    }
+  }
 
   // Run DDG + Exa search + LinkedIn fetch in parallel, reporting each as it completes
   report('DuckDuckGo: career history...');
@@ -153,8 +198,6 @@ export async function searchPerson(name: string, onProgress?: ProgressCallback):
     fetchLinkedInViaExa(name)
       .then(r => { report(r ? 'LinkedIn: profile found' : 'LinkedIn: not found', true); return r; }),
   ]);
-
-  const parts: string[] = [];
 
   if (linkedinContent) {
     parts.push(linkedinContent);

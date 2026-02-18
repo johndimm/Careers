@@ -74,6 +74,7 @@ CREATE TABLE IF NOT EXISTS saved_graphs (
 -- Add image columns to existing tables (safe to run repeatedly)
 DO $$ BEGIN
   ALTER TABLE persons ADD COLUMN IF NOT EXISTS photo_url TEXT;
+  ALTER TABLE persons ADD COLUMN IF NOT EXISTS resume_url TEXT;
   ALTER TABLE companies ADD COLUMN IF NOT EXISTS logo_url TEXT;
   ALTER TABLE companies ADD COLUMN IF NOT EXISTS domain TEXT;
 EXCEPTION WHEN OTHERS THEN NULL;
