@@ -53,7 +53,7 @@ export async function POST(request: NextRequest) {
         }
 
         const [photoUrl, ...companyLogos] = await Promise.all([
-          findPersonPhotoUrl(parsed.name).then(url => {
+          findPersonPhotoUrl(parsed.name, parsed.companies.map(c => c.company_name)).then(url => {
             send('progress', { step: `Photo for ${parsed.name}` + (url ? '' : ' (not found)'), phase: 'images', done: true });
             return url;
           }),

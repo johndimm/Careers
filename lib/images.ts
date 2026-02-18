@@ -7,6 +7,31 @@ const UA = 'CareersGraph/1.0 (https://github.com)';
 const BROWSER_UA = 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/17.4 Safari/605.1.15';
 
 // ---------------------------------------------------------------------------
+// Name matching — reject results that don't match the query
+// ---------------------------------------------------------------------------
+
+/**
+ * Check if a result title is a reasonable match for the query name.
+ * Compares last names and checks for shared significant words.
+ * "John Dimm" should match "John Dimm" or "John H. Dimm" but not "Jean-Jacques Rousseau".
+ */
+function nameMatches(query: string, resultTitle: string): boolean {
+  const normalize = (s: string) => s.toLowerCase().replace(/[^a-z0-9\s]/g, '').trim();
+  const qWords = normalize(query).split(/\s+/).filter(w => w.length > 1);
+  const rWords = normalize(resultTitle).split(/\s+/).filter(w => w.length > 1);
+  if (qWords.length === 0 || rWords.length === 0) return false;
+
+  // Last name must match
+  const qLast = qWords[qWords.length - 1];
+  if (!rWords.includes(qLast)) return false;
+
+  // At least one other word should match (first name, etc.) — unless single-word query
+  if (qWords.length === 1) return true;
+  const otherMatches = qWords.slice(0, -1).filter(w => rWords.includes(w));
+  return otherMatches.length > 0;
+}
+
+// ---------------------------------------------------------------------------
 // Shared helpers
 // ---------------------------------------------------------------------------
 
@@ -31,11 +56,12 @@ export async function validateImageUrl(url: string): Promise<string | null> {
 
 /**
  * Search Wikipedia and return the page image thumbnail for the top result.
+ * When matchName is provided, only use the result if its title matches the name.
  */
-async function fetchWikipediaImage(query: string, thumbSize: number = 400): Promise<string | null> {
+async function fetchWikipediaImage(query: string, thumbSize: number = 400, matchName?: string): Promise<string | null> {
   try {
     // Step 1: search for the article
-    const searchUrl = `https://en.wikipedia.org/w/api.php?action=query&format=json&list=search&srsearch=${encodeURIComponent(query)}&srlimit=1&origin=*`;
+    const searchUrl = `https://en.wikipedia.org/w/api.php?action=query&format=json&list=search&srsearch=${encodeURIComponent(query)}&srlimit=5&origin=*`;
     const searchRes = await fetch(searchUrl, {
       headers: { 'User-Agent': UA },
       signal: AbortSignal.timeout(5000),
@@ -45,7 +71,16 @@ async function fetchWikipediaImage(query: string, thumbSize: number = 400): Prom
 
     const results = searchData?.query?.search;
     if (!results?.length) return null;
-    const title: string = results[0].title;
+
+    // If matchName is set, find the first result whose title matches
+    let title: string;
+    if (matchName) {
+      const match = results.find((r: { title: string }) => nameMatches(matchName, r.title));
+      if (!match) return null;
+      title = match.title;
+    } else {
+      title = results[0].title;
+    }
 
     // Step 2: get page image
     const imgUrl = `https://en.wikipedia.org/w/api.php?action=query&format=json&prop=pageimages&titles=${encodeURIComponent(title)}&pithumbsize=${thumbSize}&redirects=1&origin=*`;
@@ -68,9 +103,10 @@ async function fetchWikipediaImage(query: string, thumbSize: number = 400): Prom
 
 /**
  * Query the DuckDuckGo Instant Answer API for an entity image.
+ * When matchName is provided, only use the result if the heading matches.
  * Returns a validated image URL or null.
  */
-async function fetchDuckDuckGoImage(query: string): Promise<string | null> {
+async function fetchDuckDuckGoImage(query: string, matchName?: string): Promise<string | null> {
   try {
     const res = await fetch(
       `https://api.duckduckgo.com/?q=${encodeURIComponent(query)}&format=json&no_html=1`,
@@ -78,6 +114,12 @@ async function fetchDuckDuckGoImage(query: string): Promise<string | null> {
     );
     if (!res.ok) return null;
     const data = await res.json();
+
+    // If matchName is set, verify the DDG result heading matches
+    if (matchName) {
+      const heading: string = data?.Heading || '';
+      if (!heading || !nameMatches(matchName, heading)) return null;
+    }
 
     const image: string = data?.Image || '';
     if (!image) return null;
@@ -159,6 +201,42 @@ async function fetchPersonImageFromDDGSearch(
   return null;
 }
 
+/**
+ * Google Custom Search — image search via the JSON API.
+ * Requires GOOGLE_API_KEY and GOOGLE_CSE_ID env vars.
+ * Returns the first face/photo image URL, filtering out logos and icons.
+ */
+async function fetchGoogleImage(
+  query: string,
+  excludeUrls?: Set<string>,
+): Promise<string | null> {
+  const apiKey = process.env.GOOGLE_API_KEY;
+  const cseId = process.env.GOOGLE_CSE_ID;
+  if (!apiKey || !cseId) return null;
+
+  const badPatterns = ['logo', 'icon', 'emoji', 'svg', 'vector', 'clipart', 'cartoon', 'animated', 'placeholder', 'default'];
+
+  try {
+    const url = `https://www.googleapis.com/customsearch/v1?key=${apiKey}&cx=${cseId}&q=${encodeURIComponent(query)}&searchType=image&imgType=face&num=5`;
+    const res = await fetch(url, { signal: AbortSignal.timeout(8000) });
+    if (!res.ok) return null;
+    const data = await res.json();
+
+    const items: Array<{ link?: string }> = data?.items || [];
+    for (const item of items) {
+      const imgUrl = item.link;
+      if (!imgUrl) continue;
+      if (excludeUrls?.has(imgUrl)) continue;
+      const lower = imgUrl.toLowerCase();
+      if (badPatterns.some(p => lower.includes(p))) continue;
+      return imgUrl;
+    }
+  } catch {
+    // fall through
+  }
+  return null;
+}
+
 // ---------------------------------------------------------------------------
 // Person photos
 // ---------------------------------------------------------------------------
@@ -166,17 +244,30 @@ async function fetchPersonImageFromDDGSearch(
 /**
  * Find a photo for a person.
  * Tries: Wikipedia page image → DuckDuckGo Instant Answer → DuckDuckGo Image Search.
+ * When companyHints are provided, retries with "name + company" for better disambiguation.
  */
-export async function findPersonPhotoUrl(name: string): Promise<string | null> {
-  // Try Wikipedia page image (works well for notable people)
-  const wikiImg = await fetchWikipediaImage(name, 400);
+export async function findPersonPhotoUrl(name: string, companyHints?: string[]): Promise<string | null> {
+  // Try plain name first
+  const wikiImg = await fetchWikipediaImage(name, 400, name);
   if (wikiImg) return wikiImg;
 
-  // Try DuckDuckGo Instant Answer (sometimes has person photos)
-  const ddgImg = await fetchDuckDuckGoImage(name);
+  const ddgImg = await fetchDuckDuckGoImage(name, name);
   if (ddgImg) return ddgImg;
 
-  // Try DuckDuckGo Image Search (finds photos for non-notable people)
+  // Google Custom Search — best for non-famous people
+  const googleImg = await fetchGoogleImage(name);
+  if (googleImg) return googleImg;
+
+  // Retry Wikipedia with company context for disambiguation
+  if (companyHints?.length) {
+    for (const company of companyHints.slice(0, 3)) {
+      const query = `${name} ${company}`;
+      const wikiImg2 = await fetchWikipediaImage(query, 400, name);
+      if (wikiImg2) return wikiImg2;
+    }
+  }
+
+  // DDG Image Search as last resort
   const ddgSearchImg = await fetchPersonImageFromDDGSearch(name);
   if (ddgSearchImg) return ddgSearchImg;
 
@@ -194,11 +285,14 @@ export async function findAlternatePersonPhoto(
 ): Promise<string | null> {
   const excludeSet = new Set(exclude);
 
-  const wikiImg = await fetchWikipediaImage(name, 400);
+  const wikiImg = await fetchWikipediaImage(name, 400, name);
   if (wikiImg && !excludeSet.has(wikiImg)) return wikiImg;
 
-  const ddgImg = await fetchDuckDuckGoImage(name);
+  const ddgImg = await fetchDuckDuckGoImage(name, name);
   if (ddgImg && !excludeSet.has(ddgImg)) return ddgImg;
+
+  const googleImg = await fetchGoogleImage(name, excludeSet);
+  if (googleImg) return googleImg;
 
   const ddgSearchImg = await fetchPersonImageFromDDGSearch(name, excludeSet);
   if (ddgSearchImg) return ddgSearchImg;

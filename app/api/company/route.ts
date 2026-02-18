@@ -58,7 +58,7 @@ export async function POST(request: NextRequest) {
             return url;
           }),
           ...parsed.notable_people.map(p =>
-            findPersonPhotoUrl(p.person_name).then(url => {
+            findPersonPhotoUrl(p.person_name, [parsed.name]).then(url => {
               send('progress', { step: `Photo for ${p.person_name}` + (url ? '' : ' (not found)'), phase: 'images', done: true });
               return url;
             })
