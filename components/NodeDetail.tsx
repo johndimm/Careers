@@ -1,7 +1,7 @@
 'use client';
 
 import { useState, useEffect, useRef } from 'react';
-import { X, User, Building2, Briefcase, Calendar, Link2, Check, RefreshCw, Merge } from 'lucide-react';
+import { X, User, Building2, Briefcase, Calendar, Link2, Check, RefreshCw, Merge, PanelRightClose, PanelRightOpen } from 'lucide-react';
 
 interface EdgeInfo {
   position?: string;
@@ -37,6 +37,7 @@ export default function NodeDetail({ node, edges, onClose, onNodeClick, onRetryP
   const [copied, setCopied] = useState(false);
   const [retryingPhoto, setRetryingPhoto] = useState(false);
   const [showMergeList, setShowMergeList] = useState(false);
+  const [minimized, setMinimized] = useState(false);
   const prevNodeIdRef = useRef<string | null>(null);
 
   useEffect(() => {
@@ -70,6 +71,35 @@ export default function NodeDetail({ node, edges, onClose, onNodeClick, onRetryP
     });
   };
 
+  if (minimized) {
+    return (
+      <div className="fixed right-0 top-0 h-full w-10 z-40 border-l border-slate-700/50 bg-slate-900/95 backdrop-blur-xl flex flex-col items-center pt-3 gap-2">
+        <button
+          onClick={() => setMinimized(false)}
+          className="rounded-md p-1 text-slate-400 hover:text-slate-200 transition-colors"
+          title="Expand sidebar"
+        >
+          <PanelRightOpen className="h-4 w-4" />
+        </button>
+        <button
+          onClick={onClose}
+          className="rounded-md p-1 text-slate-500 hover:text-slate-300 transition-colors"
+          title="Close"
+        >
+          <X className="h-4 w-4" />
+        </button>
+        <div className="mt-2 flex-1 flex items-start justify-center">
+          <span
+            className="text-xs text-slate-500 whitespace-nowrap"
+            style={{ writingMode: 'vertical-rl', textOrientation: 'mixed' }}
+          >
+            {node.name}
+          </span>
+        </div>
+      </div>
+    );
+  }
+
   return (
     <div className="fixed right-0 top-0 h-full w-96 z-40 overflow-y-auto border-l border-slate-700/50 bg-slate-900/95 backdrop-blur-xl">
       <div className="p-6">
@@ -90,6 +120,13 @@ export default function NodeDetail({ node, edges, onClose, onNodeClick, onRetryP
             <h2 className="text-lg font-semibold text-slate-100">{node.name}</h2>
           </div>
           <div className="flex items-center gap-1">
+            <button
+              onClick={() => setMinimized(true)}
+              className="rounded-md p-1 text-slate-500 hover:text-slate-300 transition-colors"
+              title="Minimize sidebar"
+            >
+              <PanelRightClose className="h-4 w-4" />
+            </button>
             {isPerson && onRetryPhoto && (
               <button
                 onClick={handleRetryPhoto}

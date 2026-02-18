@@ -496,6 +496,18 @@ export function updatePersonPhoto(nameNormalized: string, photoUrl: string | nul
 }
 
 /**
+ * Update the logo URL for a company found by normalized name.
+ */
+export function updateCompanyLogo(nameNormalized: string, logoUrl: string | null): void {
+  if (!isBrowser()) return;
+  const companies = getCompanies();
+  const key = findMatchingKey(Object.keys(companies), nameNormalized);
+  if (!key) return;
+  companies[key].logoUrl = logoUrl;
+  setCompanies(companies);
+}
+
+/**
  * Clear all graph data (persons + companies) but keep settings.
  */
 export function clearGraph(): void {

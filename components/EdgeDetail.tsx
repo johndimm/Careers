@@ -1,6 +1,7 @@
 'use client';
 
-import { X, User, Building2, Briefcase, Calendar, Users, ArrowUp, FileText } from 'lucide-react';
+import { useState } from 'react';
+import { X, User, Building2, Briefcase, Calendar, Users, ArrowUp, FileText, PanelRightClose, PanelRightOpen } from 'lucide-react';
 import { GraphLink, GraphNode } from './Graph';
 
 interface EdgeDetailProps {
@@ -12,20 +13,59 @@ interface EdgeDetailProps {
 }
 
 export default function EdgeDetail({ link, sourceNode, targetNode, onClose, onNodeClick }: EdgeDetailProps) {
+  const [minimized, setMinimized] = useState(false);
   const person = sourceNode.type === 'person' ? sourceNode : targetNode;
   const company = sourceNode.type === 'company' ? sourceNode : targetNode;
+
+  if (minimized) {
+    return (
+      <div className="fixed right-0 top-0 h-full w-10 z-40 border-l border-slate-700/50 bg-slate-900/95 backdrop-blur-xl flex flex-col items-center pt-3 gap-2">
+        <button
+          onClick={() => setMinimized(false)}
+          className="rounded-md p-1 text-slate-400 hover:text-slate-200 transition-colors"
+          title="Expand sidebar"
+        >
+          <PanelRightOpen className="h-4 w-4" />
+        </button>
+        <button
+          onClick={onClose}
+          className="rounded-md p-1 text-slate-500 hover:text-slate-300 transition-colors"
+          title="Close"
+        >
+          <X className="h-4 w-4" />
+        </button>
+        <div className="mt-2 flex-1 flex items-start justify-center">
+          <span
+            className="text-xs text-slate-500 whitespace-nowrap"
+            style={{ writingMode: 'vertical-rl', textOrientation: 'mixed' }}
+          >
+            {person.name} — {company.name}
+          </span>
+        </div>
+      </div>
+    );
+  }
 
   return (
     <div className="fixed right-0 top-0 h-full w-96 z-40 overflow-y-auto border-l border-slate-700/50 bg-slate-900/95 backdrop-blur-xl">
       <div className="p-6">
         <div className="flex items-start justify-between mb-4">
           <h2 className="text-sm font-semibold text-slate-400 uppercase tracking-wider">Connection</h2>
-          <button
-            onClick={onClose}
-            className="rounded-md p-1 text-slate-500 hover:text-slate-300 transition-colors"
-          >
-            <X className="h-4 w-4" />
-          </button>
+          <div className="flex items-center gap-1">
+            <button
+              onClick={() => setMinimized(true)}
+              className="rounded-md p-1 text-slate-500 hover:text-slate-300 transition-colors"
+              title="Minimize sidebar"
+            >
+              <PanelRightClose className="h-4 w-4" />
+            </button>
+            <button
+              onClick={onClose}
+              className="rounded-md p-1 text-slate-500 hover:text-slate-300 transition-colors"
+            >
+              <X className="h-4 w-4" />
+            </button>
+          </div>
         </div>
 
         {/* Person */}

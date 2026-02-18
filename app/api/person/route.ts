@@ -47,26 +47,36 @@ export async function POST(request: NextRequest) {
         });
 
         // Phase 3: Images — person photo + company logos in parallel
-        send('progress', { step: 'Finding photo and company logos...', phase: 'images' });
+        send('progress', { step: `Finding photo for ${parsed.name}...`, phase: 'images' });
+        for (const c of parsed.companies) {
+          send('progress', { step: `Finding logo for ${c.company_name}...`, phase: 'images' });
+        }
 
-        const [photoUrl, companies] = await Promise.all([
-          findPersonPhotoUrl(parsed.name),
-          Promise.all(
-            parsed.companies.map(async c => ({
-              companyName: c.company_name,
-              companyNameNormalized: normalizeCompany(c.company_name),
-              logoUrl: await findCompanyLogoUrl(c.company_name),
-              position: c.position,
-              startYear: c.start_year,
-              endYear: c.end_year,
-              projects: c.projects,
-              coworkers: c.coworkers,
-              reportsTo: c.reports_to,
-              performanceComments: c.performance_comments,
-            }))
+        const [photoUrl, ...companyLogos] = await Promise.all([
+          findPersonPhotoUrl(parsed.name).then(url => {
+            send('progress', { step: `Photo for ${parsed.name}` + (url ? '' : ' (not found)'), phase: 'images', done: true });
+            return url;
+          }),
+          ...parsed.companies.map(c =>
+            findCompanyLogoUrl(c.company_name).then(url => {
+              send('progress', { step: `Logo for ${c.company_name}` + (url ? '' : ' (not found)'), phase: 'images', done: true });
+              return url;
+            })
           ),
         ]);
-        send('progress', { step: 'Images loaded', phase: 'images', done: true });
+
+        const companies = parsed.companies.map((c, i) => ({
+          companyName: c.company_name,
+          companyNameNormalized: normalizeCompany(c.company_name),
+          logoUrl: companyLogos[i],
+          position: c.position,
+          startYear: c.start_year,
+          endYear: c.end_year,
+          projects: c.projects,
+          coworkers: c.coworkers,
+          reportsTo: c.reports_to,
+          performanceComments: c.performance_comments,
+        }));
 
         // Final result
         send('result', {

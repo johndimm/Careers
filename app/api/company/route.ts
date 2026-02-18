@@ -47,25 +47,35 @@ export async function POST(request: NextRequest) {
         });
 
         // Phase 3: Images — logo + person photos in parallel
-        send('progress', { step: 'Finding logo and person photos...', phase: 'images' });
+        send('progress', { step: `Finding logo for ${parsed.name}...`, phase: 'images' });
+        for (const p of parsed.notable_people) {
+          send('progress', { step: `Finding photo for ${p.person_name}...`, phase: 'images' });
+        }
 
-        const [logoUrl, notablePeople] = await Promise.all([
-          findCompanyLogoUrl(parsed.name),
-          Promise.all(
-            parsed.notable_people.map(async p => ({
-              personName: p.person_name,
-              personNameNormalized: normalize(p.person_name),
-              photoUrl: await findPersonPhotoUrl(p.person_name),
-              position: p.position,
-              startYear: p.start_year,
-              endYear: p.end_year,
-              projects: p.projects,
-              coworkers: p.coworkers,
-              reportsTo: p.reports_to,
-            }))
+        const [logoUrl, ...personPhotos] = await Promise.all([
+          findCompanyLogoUrl(parsed.name).then(url => {
+            send('progress', { step: `Logo for ${parsed.name}` + (url ? '' : ' (not found)'), phase: 'images', done: true });
+            return url;
+          }),
+          ...parsed.notable_people.map(p =>
+            findPersonPhotoUrl(p.person_name).then(url => {
+              send('progress', { step: `Photo for ${p.person_name}` + (url ? '' : ' (not found)'), phase: 'images', done: true });
+              return url;
+            })
           ),
         ]);
-        send('progress', { step: 'Images loaded', phase: 'images', done: true });
+
+        const notablePeople = parsed.notable_people.map((p, i) => ({
+          personName: p.person_name,
+          personNameNormalized: normalize(p.person_name),
+          photoUrl: personPhotos[i],
+          position: p.position,
+          startYear: p.start_year,
+          endYear: p.end_year,
+          projects: p.projects,
+          coworkers: p.coworkers,
+          reportsTo: p.reports_to,
+        }));
 
         // Final result
         send('result', {

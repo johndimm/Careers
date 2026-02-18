@@ -74,13 +74,26 @@ export function normalize(name: string): string {
     .trim();
 }
 
+// Known company rebrand/acquisition aliases → canonical current name.
+// Applied after suffix stripping so e.g. "Websense, Inc." → "websense" → "forcepoint".
+const COMPANY_ALIASES: Record<string, string> = {
+  'websense': 'forcepoint',
+  'blue coat': 'symantec',
+  'blue coat systems': 'symantec',
+  'sun microsystems': 'oracle',
+};
+
 // Normalize company names more aggressively to deduplicate variants
 export function normalizeCompany(name: string): string {
-  return name.trim().toLowerCase()
+  let n = name.trim().toLowerCase()
     .replace(/\./g, '')
     .replace(/\s+/g, ' ')
     .replace(/,?\s*(inc|llc|ltd|corp|co|corporation|incorporated|limited|company|group|holdings)$/i, '')
     .replace(/\s+(technologies|technology|security|networks|systems|solutions|software|labs|digital|media|studios|services|consulting|partners|ventures|international|global|usa|us)$/i, '')
     .replace(/\s+/g, ' ')
     .trim();
+
+  if (COMPANY_ALIASES[n]) n = COMPANY_ALIASES[n];
+
+  return n;
 }
