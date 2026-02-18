@@ -2,8 +2,8 @@ import { NextRequest, NextResponse } from 'next/server';
 import { query, queryOne } from '@/lib/db';
 import crypto from 'crypto';
 
-function generateId(): string {
-  return crypto.randomBytes(4).toString('hex'); // 8 hex chars
+function generateId(): number {
+  return crypto.randomBytes(4).readUInt32BE() % 2147483647; // positive 32-bit integer
 }
 
 export async function POST(req: NextRequest) {
@@ -16,9 +16,10 @@ export async function POST(req: NextRequest) {
     }
 
     const id = generateId();
+    const data = { persons, companies };
     await query(
-      'INSERT INTO saved_graphs (id, name, persons, companies) VALUES ($1, $2, $3, $4)',
-      [id, name || null, JSON.stringify(persons), JSON.stringify(companies)],
+      'INSERT INTO saved_graphs (id, name, data, persons, companies) VALUES ($1, $2, $3, $4, $5)',
+      [id, name || `Graph ${id}`, JSON.stringify(data), JSON.stringify(persons), JSON.stringify(companies)],
     );
 
     return NextResponse.json({ id });

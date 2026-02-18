@@ -87,7 +87,7 @@ function HomeContent() {
   const [loading, setLoading] = useState(false);
   const [loadingTitle, setLoadingTitle] = useState('');
   const [progressSteps, setProgressSteps] = useState<ProgressStep[]>([]);
-  const [shareCopied, setShareCopied] = useState(false);
+  const [shareUrl, setShareUrl] = useState<string | null>(null);
   const [nodeProgress, setNodeProgress] = useState<Record<string, { name: string; steps: ProgressStep[] }>>({});
   const loadingNodesRef = useRef<Set<string>>(new Set());
   const lastSearchRef = useRef<{ query: string; type: 'person' | 'company' } | null>(null);
@@ -274,9 +274,10 @@ function HomeContent() {
       const { id } = await res.json();
       const url = new URL(window.location.href.split('?')[0]);
       url.searchParams.set('graph', id);
-      await navigator.clipboard.writeText(url.toString());
-      setShareCopied(true);
-      setTimeout(() => setShareCopied(false), 2000);
+      const shareLink = url.toString();
+      await navigator.clipboard.writeText(shareLink);
+      setShareUrl(shareLink);
+      setTimeout(() => setShareUrl(null), 8000);
     } catch (e) {
       console.error('Share error:', e);
     }
@@ -381,8 +382,8 @@ function HomeContent() {
                 className="flex items-center gap-1.5 rounded-lg border border-slate-700/50 bg-slate-800/50 px-3 py-2 text-xs text-slate-400 transition-colors hover:text-blue-400 hover:border-blue-700/50"
                 title="Copy shareable link"
               >
-                {shareCopied ? <Check className="h-3.5 w-3.5 text-green-400" /> : <Share2 className="h-3.5 w-3.5" />}
-                {shareCopied ? 'Copied!' : 'Share'}
+                {shareUrl ? <Check className="h-3.5 w-3.5 text-green-400" /> : <Share2 className="h-3.5 w-3.5" />}
+                {shareUrl ? 'Copied!' : 'Share'}
               </button>
               <button
                 onClick={handleClear}
@@ -403,6 +404,15 @@ function HomeContent() {
           <SettingsPanel />
         </div>
       </header>
+
+      {/* Share URL toast */}
+      {shareUrl && (
+        <div className="absolute top-14 left-1/2 -translate-x-1/2 z-40 flex items-center gap-2 rounded-lg border border-green-700/50 bg-green-900/90 px-4 py-2 shadow-lg backdrop-blur-sm">
+          <Check className="h-4 w-4 text-green-400 shrink-0" />
+          <span className="text-xs text-green-200">Link copied to clipboard:</span>
+          <a href={shareUrl} className="text-xs text-green-400 underline underline-offset-2 max-w-[400px] truncate" title={shareUrl}>{shareUrl}</a>
+        </div>
+      )}
 
       {/* Graph canvas */}
       <main className="flex-1 relative">

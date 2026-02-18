@@ -44,8 +44,13 @@ interface GraphProps {
 }
 
 const NODE_RADIUS = 24;
+const NODE_RADIUS_EXPANDED = 36;
 const COMPANY_W = 48;
 const COMPANY_H = 48;
+
+function personRadius(d: GraphNode): number {
+  return d.expanded ? NODE_RADIUS_EXPANDED : NODE_RADIUS;
+}
 
 export default function Graph({ nodes, links, selectedNodeId, onNodeClick, onLinkClick }: GraphProps) {
   const svgRef = useRef<SVGSVGElement>(null);
@@ -82,6 +87,14 @@ export default function Graph({ nodes, links, selectedNodeId, onNodeClick, onLin
       .attr('id', 'clip-circle')
       .append('circle')
       .attr('r', NODE_RADIUS)
+      .attr('cx', 0)
+      .attr('cy', 0);
+
+    // Larger circular clip for expanded person photos
+    defs.append('clipPath')
+      .attr('id', 'clip-circle-expanded')
+      .append('circle')
+      .attr('r', NODE_RADIUS_EXPANDED)
       .attr('cx', 0)
       .attr('cy', 0);
 
@@ -145,7 +158,7 @@ export default function Graph({ nodes, links, selectedNodeId, onNodeClick, onLin
       .force('center', d3.forceCenter(width / 2, height / 2))
       .force('x', d3.forceX(width / 2).strength(0.08))
       .force('y', d3.forceY(height / 2).strength(0.08))
-      .force('collide', d3.forceCollide().radius(50))
+      .force('collide', d3.forceCollide<GraphNode>().radius(d => d.type === 'person' && d.expanded ? 60 : 50))
       .alpha(hasExisting ? 0.3 : 0.5)
       .alphaDecay(0.05)
       .velocityDecay(0.4);
@@ -215,14 +228,14 @@ export default function Graph({ nodes, links, selectedNodeId, onNodeClick, onLin
 
     // Background circle (visible when no image or as border)
     personNodes.append('circle')
-      .attr('r', NODE_RADIUS + 2)
+      .attr('r', d => personRadius(d) + 2)
       .attr('fill', 'none')
       .attr('stroke', d => d.expanded ? '#f59e0b' : '#92400e')
       .attr('stroke-width', 3);
 
     // Fallback circle fill
     personNodes.append('circle')
-      .attr('r', NODE_RADIUS)
+      .attr('r', d => personRadius(d))
       .attr('fill', d => d.expanded ? '#78350f' : '#451a03');
 
     // Person initials (visible when image fails)
@@ -231,7 +244,7 @@ export default function Graph({ nodes, links, selectedNodeId, onNodeClick, onLin
       .attr('text-anchor', 'middle')
       .attr('dy', '0.35em')
       .attr('fill', '#fbbf24')
-      .attr('font-size', '14px')
+      .attr('font-size', d => d.expanded ? '18px' : '14px')
       .attr('font-weight', '600')
       .text(d => d.name.split(' ').map(w => w[0]).join('').slice(0, 2).toUpperCase());
 
@@ -239,11 +252,11 @@ export default function Graph({ nodes, links, selectedNodeId, onNodeClick, onLin
     personNodes.filter(d => !!d.imageUrl)
       .append('image')
       .attr('href', d => d.imageUrl!)
-      .attr('x', -NODE_RADIUS)
-      .attr('y', -NODE_RADIUS)
-      .attr('width', NODE_RADIUS * 2)
-      .attr('height', NODE_RADIUS * 2)
-      .attr('clip-path', 'url(#clip-circle)')
+      .attr('x', d => -personRadius(d))
+      .attr('y', d => -personRadius(d))
+      .attr('width', d => personRadius(d) * 2)
+      .attr('height', d => personRadius(d) * 2)
+      .attr('clip-path', d => d.expanded ? 'url(#clip-circle-expanded)' : 'url(#clip-circle)')
       .attr('preserveAspectRatio', 'xMidYMid slice')
       .on('error', function () {
         // On image load failure, remove the image element (initials will show)
@@ -308,7 +321,7 @@ export default function Graph({ nodes, links, selectedNodeId, onNodeClick, onLin
       .attr('stroke-width', 2.5)
       .attr('stroke-dasharray', '8 12')
       .attr('stroke-linecap', 'round')
-      .attr('r', d => d.type === 'person' ? NODE_RADIUS + 8 : COMPANY_W / 2 + 8);
+      .attr('r', d => d.type === 'person' ? personRadius(d) + 8 : COMPANY_W / 2 + 8);
 
     spinner.append('animateTransform')
       .attr('attributeName', 'transform')
@@ -349,7 +362,7 @@ export default function Graph({ nodes, links, selectedNodeId, onNodeClick, onLin
 
     label.each(function (d) {
       const lines = splitLabel(d.name);
-      const baseY = d.type === 'person' ? NODE_RADIUS + 14 : COMPANY_H / 2 + 14;
+      const baseY = d.type === 'person' ? personRadius(d) + 14 : COMPANY_H / 2 + 14;
       const el = d3.select(this);
       lines.forEach((line, i) => {
         el.append('tspan')
