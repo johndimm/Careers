@@ -9,8 +9,8 @@ const inter = Inter({
 });
 
 export const metadata: Metadata = {
-  title: "Careers Graph",
-  description: "Explore professional careers as an interactive graph",
+  title: "Orbit",
+  description: "Explore connections between people and companies",
 };
 
 export default function RootLayout({

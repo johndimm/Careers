@@ -411,7 +411,7 @@ function HomeContent() {
       {/* Header */}
       <header className="flex items-center justify-between px-4 py-2 border-b border-slate-800/50 bg-slate-950/80 backdrop-blur-sm z-30">
         <h1 className="text-lg font-semibold text-slate-100 tracking-tight">
-          Careers Graph
+          Orbit
         </h1>
         <div className="flex items-center gap-3">
           <SearchBar onSearch={handleSearch} disabled={loading} />

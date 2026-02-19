@@ -225,7 +225,7 @@ export default function ServicesPage() {
         {/* Overview */}
         <section>
           <p className="text-sm text-slate-400 leading-relaxed">
-            Careers Graph queries multiple external services to research a person or company.
+            Orbit queries multiple external services to research a person or company.
             Each service is called during a specific phase of the pipeline. Click any service below to expand it and run example queries to see the raw output.
           </p>
         </section>
