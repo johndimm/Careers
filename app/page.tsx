@@ -215,10 +215,22 @@ function HomeContent() {
 
     if (node.type === 'company') {
       const excludeNames = store.getCompanyPeopleNames(norm);
+      // Find the person who led us to this company (connected person node)
+      const connectedPersonLink = graphData.links.find(l => {
+        const sid = typeof l.source === 'string' ? l.source : l.source.id;
+        const tid = typeof l.target === 'string' ? l.target : l.target.id;
+        return tid === nodeId && sid.startsWith('person:');
+      });
+      const referringPersonId = connectedPersonLink
+        ? (typeof connectedPersonLink.source === 'string' ? connectedPersonLink.source : connectedPersonLink.source.id)
+        : null;
+      const referringPerson = referringPersonId
+        ? graphData.nodes.find(n => n.id === referringPersonId)?.name
+        : undefined;
       loadingNodesRef.current.add(nodeId);
       setNodeProgress(prev => ({ ...prev, [nodeId]: { name: nodeName, steps: [] } }));
       rebuildGraph();
-      fetchSSE('/api/company', { name: nodeName, provider: store.getActiveProvider(), excludeNames }, onNodeProgress)
+      fetchSSE('/api/company', { name: nodeName, provider: store.getActiveProvider(), excludeNames, ...(referringPerson ? { referringPerson } : {}) }, onNodeProgress)
         .then(data => {
           if (data?.company) store.mergeCompanyData(data.company as Parameters<typeof store.mergeCompanyData>[0]);
         })

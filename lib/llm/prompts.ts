@@ -38,9 +38,13 @@ Return a JSON object with this exact structure:
 Include ALL companies and positions found for "${name}" in the search results, from most recent to oldest. Use null for unknown years. Only include projects, coworkers, reports_to if explicitly mentioned. If a person held multiple positions at the same company, include each position as a separate entry. Return ONLY the JSON object, no other text.`;
 }
 
-export function companyPrompt(name: string, searchContext: string, excludeNames?: string[]): string {
+export function companyPrompt(name: string, searchContext: string, excludeNames?: string[], referringPerson?: string): string {
   const excludeClause = excludeNames?.length
     ? `\n\nIMPORTANT: We already know about these people — do NOT include them again:\n${excludeNames.map(n => `- ${n}`).join('\n')}\nFind DIFFERENT people instead.\n`
+    : '';
+
+  const referringClause = referringPerson
+    ? `\n\nIMPORTANT: We are exploring this company because "${referringPerson}" worked there. Prioritize finding people who are likely connected to "${referringPerson}" — colleagues, managers, direct reports, people on the same team, people with overlapping tenure, or LinkedIn connections. Include anyone mentioned alongside "${referringPerson}" in the search results.\n`
     : '';
 
   return `Here are web search results about "${name}":
@@ -49,7 +53,7 @@ export function companyPrompt(name: string, searchContext: string, excludeNames?
 ${searchContext}
 ---
 
-Based ONLY on the search results above, extract information about the company "${name}".${excludeClause} Return a JSON object with this exact structure:
+Based ONLY on the search results above, extract information about the company "${name}".${excludeClause}${referringClause} Return a JSON object with this exact structure:
 {
   "name": "Official Company Name",
   "description": "2-3 sentence company description",

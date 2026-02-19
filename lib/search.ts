@@ -289,14 +289,15 @@ async function exaSearchPerson(name: string): Promise<string> {
   }
 }
 
-export async function searchCompany(name: string, onProgress?: ProgressCallback): Promise<string> {
+export async function searchCompany(name: string, onProgress?: ProgressCallback, referringPerson?: string): Promise<string> {
   const report = onProgress || (() => {});
 
   report('DuckDuckGo: leadership...');
   report('DuckDuckGo: employees...');
   report('Exa: company search...');
+  if (referringPerson) report(`Searching for ${referringPerson}'s connections...`);
 
-  const [ddgLeadership, ddgTeam, ddgLinkedin, exaResult] = await Promise.all([
+  const searches: Promise<{ snippets: string[]; urls: string[] } | string | null>[] = [
     duckDuckGoSearch(`${name} company executives founders leadership team`)
       .then(r => { report(`DuckDuckGo leadership: ${r.snippets.length} snippets`, true); return r; }),
     duckDuckGoSearch(`"${name}" employees engineers directors managers site:linkedin.com`)
@@ -305,7 +306,27 @@ export async function searchCompany(name: string, onProgress?: ProgressCallback)
       .then(r => { report(`DuckDuckGo team: ${r.snippets.length} snippets`, true); return r; }),
     exaSearchCompany(name)
       .then(r => { report(`Exa: ${r ? r.split('\n').filter(l => l.startsWith('[Source')).length : 0} sources`, true); return r; }),
-  ]);
+  ];
+
+  // If we have a referring person, add targeted searches for their connections
+  if (referringPerson) {
+    searches.push(
+      duckDuckGoSearch(`"${referringPerson}" "${name}" colleagues coworkers team`)
+        .then(r => { report(`DuckDuckGo ${referringPerson} connections: ${r.snippets.length} snippets`, true); return r; }),
+      duckDuckGoSearch(`"${referringPerson}" "${name}" site:linkedin.com`)
+        .then(r => { report(`LinkedIn ${referringPerson} at ${name}: ${r.snippets.length} snippets`, true); return r; }),
+    );
+  }
+
+  const results = await Promise.all(searches);
+  const [ddgLeadership, ddgTeam, ddgLinkedin, exaResult] = results as [
+    { snippets: string[]; urls: string[] },
+    { snippets: string[]; urls: string[] },
+    { snippets: string[]; urls: string[] },
+    string | null,
+  ];
+  const ddgPersonConnections = referringPerson ? results[4] as { snippets: string[]; urls: string[] } : null;
+  const ddgPersonLinkedin = referringPerson ? results[5] as { snippets: string[]; urls: string[] } : null;
 
   const parts: string[] = [];
   if (ddgLeadership.snippets.length > 0) {
@@ -317,8 +338,18 @@ export async function searchCompany(name: string, onProgress?: ProgressCallback)
   if (ddgLinkedin.snippets.length > 0) {
     parts.push(`[DuckDuckGo: LinkedIn]\n${ddgLinkedin.snippets.join('\n')}`);
   }
+  if (ddgPersonConnections && ddgPersonConnections.snippets.length > 0) {
+    parts.push(`[DuckDuckGo: ${referringPerson}'s Connections]\n${ddgPersonConnections.snippets.join('\n')}`);
+  }
+  if (ddgPersonLinkedin && ddgPersonLinkedin.snippets.length > 0) {
+    parts.push(`[DuckDuckGo: ${referringPerson} LinkedIn at ${name}]\n${ddgPersonLinkedin.snippets.join('\n')}`);
+  }
 
-  const allUrls = [...new Set([...ddgLeadership.urls, ...ddgTeam.urls, ...ddgLinkedin.urls])];
+  const personUrls = [
+    ...(ddgPersonConnections?.urls || []),
+    ...(ddgPersonLinkedin?.urls || []),
+  ];
+  const allUrls = [...new Set([...ddgLeadership.urls, ...ddgTeam.urls, ...ddgLinkedin.urls, ...personUrls])];
   const teamPageUrls = allUrls.filter(u => {
     if (u.includes('duckduckgo.com')) return false;
     if (u.endsWith('.pdf') || u.endsWith('.doc')) return false;

@@ -16,7 +16,7 @@ export async function POST(request: NextRequest) {
       }
 
       try {
-        const { name, provider: providerName, excludeNames } = await request.json();
+        const { name, provider: providerName, excludeNames, referringPerson } = await request.json();
         if (!name || typeof name !== 'string') {
           send('error', { error: 'Name is required' });
           controller.close();
@@ -28,12 +28,12 @@ export async function POST(request: NextRequest) {
         // Phase 1: Web search — stream individual source progress
         const searchContext = await searchCompany(name, (msg, done) => {
           send('progress', { step: msg, phase: 'search', ...(done ? { done: true } : {}) });
-        });
+        }, referringPerson);
         send('progress', { step: 'Web search complete', phase: 'search', done: true });
 
         // Phase 2: LLM extraction
         send('progress', { step: 'Extracting company data...', phase: 'llm' });
-        const prompt = companyPrompt(name, searchContext, excludeNames);
+        const prompt = companyPrompt(name, searchContext, excludeNames, referringPerson);
         const { result: raw, usedModel } = await generateJSONWithFallback<CompanyLLMResponse>(
           (providerName || 'deepseek') as ProviderName,
           prompt,
