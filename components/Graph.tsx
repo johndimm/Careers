@@ -108,6 +108,40 @@ export default function Graph({ nodes, links, selectedNodeId, onNodeClick, onLin
       .attr('y', -COMPANY_H / 2)
       .attr('rx', 8);
 
+    // Cable texture pattern for links — subtle dark red with faint diagonal grain
+    const cablePattern = defs.append('pattern')
+      .attr('id', 'cable-texture')
+      .attr('patternUnits', 'userSpaceOnUse')
+      .attr('width', 6)
+      .attr('height', 6)
+      .attr('patternTransform', 'rotate(45)');
+    cablePattern.append('rect')
+      .attr('width', 6)
+      .attr('height', 6)
+      .attr('fill', '#7f1d1d');
+    cablePattern.append('line')
+      .attr('x1', 0).attr('y1', 0)
+      .attr('x2', 0).attr('y2', 6)
+      .attr('stroke', '#6b1a1a')
+      .attr('stroke-width', 1);
+
+    // Highlighted cable pattern for hover
+    const cableHoverPattern = defs.append('pattern')
+      .attr('id', 'cable-texture-hover')
+      .attr('patternUnits', 'userSpaceOnUse')
+      .attr('width', 6)
+      .attr('height', 6)
+      .attr('patternTransform', 'rotate(45)');
+    cableHoverPattern.append('rect')
+      .attr('width', 6)
+      .attr('height', 6)
+      .attr('fill', '#991b1b');
+    cableHoverPattern.append('line')
+      .attr('x1', 0).attr('y1', 0)
+      .attr('x2', 0).attr('y2', 6)
+      .attr('stroke', '#862020')
+      .attr('stroke-width', 1);
+
     const g = svg.append('g');
 
     // Zoom
@@ -170,9 +204,9 @@ export default function Graph({ nodes, links, selectedNodeId, onNodeClick, onLin
       .selectAll<SVGPathElement, GraphLink>('path')
       .data(mergedLinks)
       .join('path')
-      .attr('stroke', '#475569')
-      .attr('stroke-width', 4)
-      .attr('stroke-opacity', 0.5)
+      .attr('stroke', 'url(#cable-texture)')
+      .attr('stroke-width', 5)
+      .attr('stroke-opacity', 0.8)
       .attr('stroke-linecap', 'round')
       .attr('fill', 'none')
       .attr('cursor', 'pointer');
@@ -381,15 +415,15 @@ export default function Graph({ nodes, links, selectedNodeId, onNodeClick, onLin
     // Link interaction: hover + click
     function handleLinkHover(this: SVGPathElement, _event: MouseEvent, d: GraphLink) {
       d3.select(link.nodes()[mergedLinks.indexOf(d)])
-        .attr('stroke', '#f59e0b')
-        .attr('stroke-width', 6)
-        .attr('stroke-opacity', 0.9);
+        .attr('stroke', 'url(#cable-texture-hover)')
+        .attr('stroke-width', 7)
+        .attr('stroke-opacity', 1);
     }
     function handleLinkLeave(this: SVGPathElement, _event: MouseEvent, d: GraphLink) {
       d3.select(link.nodes()[mergedLinks.indexOf(d)])
-        .attr('stroke', '#475569')
-        .attr('stroke-width', 4)
-        .attr('stroke-opacity', 0.5);
+        .attr('stroke', 'url(#cable-texture)')
+        .attr('stroke-width', 5)
+        .attr('stroke-opacity', 0.8);
     }
     function handleLinkClick(this: SVGPathElement, _event: MouseEvent, d: GraphLink) {
       _event.stopPropagation();
@@ -402,17 +436,17 @@ export default function Graph({ nodes, links, selectedNodeId, onNodeClick, onLin
       .on('click', handleLinkClick);
 
     link
-      .on('mouseenter', function (_event, d) {
+      .on('mouseenter', function () {
         d3.select(this)
-          .attr('stroke', '#f59e0b')
-          .attr('stroke-width', 6)
-          .attr('stroke-opacity', 0.9);
+          .attr('stroke', 'url(#cable-texture-hover)')
+          .attr('stroke-width', 7)
+          .attr('stroke-opacity', 1);
       })
       .on('mouseleave', function () {
         d3.select(this)
-          .attr('stroke', '#475569')
-          .attr('stroke-width', 4)
-          .attr('stroke-opacity', 0.5);
+          .attr('stroke', 'url(#cable-texture)')
+          .attr('stroke-width', 5)
+          .attr('stroke-opacity', 0.8);
       })
       .on('click', handleLinkClick);
 
@@ -438,7 +472,7 @@ export default function Graph({ nodes, links, selectedNodeId, onNodeClick, onLin
         });
       } else {
         node.attr('opacity', 1);
-        link.attr('opacity', 0.5);
+        link.attr('opacity', 0.8);
         linkHitArea.attr('opacity', 1);
       }
     }

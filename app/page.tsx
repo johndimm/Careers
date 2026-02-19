@@ -239,6 +239,7 @@ function HomeContent() {
           loadingNodesRef.current.delete(nodeId);
           clearNodeProgress();
           rebuildGraph();
+          setSelectedNode(null);
         });
     } else if (node.type === 'person') {
       const excludeCompanies = store.getPersonCompanyNames(norm);
@@ -266,6 +267,7 @@ function HomeContent() {
           loadingNodesRef.current.delete(nodeId);
           clearNodeProgress();
           rebuildGraph();
+          setSelectedNode(null);
         });
     }
 
